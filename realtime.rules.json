@@ -1,0 +1,153 @@
+{
+  "rules": {
+    "publicData": {
+      ".read": true,
+      ".write": false
+    },
+
+    "admins": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('admins/' + auth.uid).val() == true"
+    },
+
+    "users": {
+      "mobileApp": {
+        ".read": "auth != null && root.child('admins/' + auth.uid).val() == true",
+        "$uid": {
+          ".read": "auth != null && (auth.uid == $uid || root.child('admins/' + auth.uid).val() == true)",
+          ".write": "auth != null && auth.uid == $uid",
+          ".indexOn": ["emailLower"]
+        }
+      },
+      "webapp": {
+        ".read": true,
+        ".write": "auth != null",
+        ".indexOn": ["email"],
+        "$uid": {
+          ".read": true,
+          ".write": "auth != null",
+          ".indexOn": ["email"]
+        }
+      }
+    },
+
+    "business": {
+      ".read": true,
+
+      "posts": {
+        ".read": true,
+        ".write": false
+      },
+
+      "business_application": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".indexOn": ["meta/createdAt", "meta/status", "meta/applicantUid"],
+
+        "$appId": {
+          ".read": "auth != null && (data.child('meta/applicantUid').val() == auth.uid || root.child('admins/' + auth.uid).val() == true)",
+
+          ".write": "auth != null && (root.child('admins/' + auth.uid).val() == true || (!data.exists() && newData.child('meta/applicantUid').val() == auth.uid) || (data.child('meta/applicantUid').val() == auth.uid))",
+
+          "meta": {
+            "applicantUid": {
+              ".write": "auth != null && (root.child('admins/' + auth.uid).val() == true || !data.exists())",
+              ".validate": "newData.isString() && (root.child('admins/' + auth.uid).val() == true || newData.val() == auth.uid)"
+            },
+
+            "status": { ".validate": "newData.isString()" },
+            "overallStatus": { ".validate": "newData.isString()" },
+            "municipality": { ".validate": "newData.isString()" },
+            "businessName": { ".validate": "newData.isString()" },
+
+            "createdAt": {
+              ".validate": "newData.isNumber() || newData.child('.sv').val() == 'timestamp'"
+            },
+            "updatedAt": {
+              ".validate": "newData.isNumber() || newData.child('.sv').val() == 'timestamp'"
+            }
+          },
+
+          "form": {
+            ".write": "auth != null && (root.child('admins/' + auth.uid).val() == true || data.parent().child('meta/applicantUid').val() == auth.uid)",
+            ".validate": "!newData.exists() || (!newData.isString() && !newData.isNumber() && !newData.isBoolean())"
+          },
+
+          "requirements": {
+            ".read": "auth != null",
+            ".write": "auth != null && (root.child('admins/' + auth.uid).val() == true || root.child('business/business_application/' + $appId + '/meta/applicantUid').val() == auth.uid)"
+          },
+
+          "chat": {
+            ".write": "auth != null && (root.child('admins/' + auth.uid).val() == true || data.parent().child('meta/applicantUid').val() == auth.uid)",
+            ".validate": "!newData.exists() || (!newData.isString() && !newData.isNumber() && !newData.isBoolean())"
+          }
+        }
+      }
+    },
+
+    "lgu_sabangan_status": {
+      ".read": true,
+
+      ".write": "auth != null",
+
+      "statusBoard": {
+        ".read": true,
+        ".write": "auth != null",
+
+        
+        ".indexOn": ["municipality/lastUpdatedAt", "featuredEvent/date"],
+
+        "municipality": {
+          "isOpen": { ".validate": "newData.isBoolean()" },
+          "officeHours": { ".validate": "newData.isString()" },
+          "publicNote": { ".validate": "newData.isString()" },
+
+          "lastUpdatedAt": {
+            ".validate": "newData.isNumber() || newData.child('.sv').val() == 'timestamp'"
+          },
+          "lastUpdatedBy": { ".validate": "newData.isString()" }
+        },
+
+        "mayor": {
+          "availability": { ".validate": "newData.isString()" },
+          "note": { ".validate": "newData.isString()" },
+          "expectedBack": { ".validate": "newData.isString()" }
+        },
+
+        "featuredEvent": {
+          "enabled": { ".validate": "newData.isBoolean()" },
+          "title": { ".validate": "newData.isString()" },
+          "subtitle": { ".validate": "newData.isString()" },
+          "date": { ".validate": "newData.isString()" },
+          "time": { ".validate": "newData.isString()" },
+          "location": { ".validate": "newData.isString()" },
+          "details": { ".validate": "newData.isString()" },
+          "category": { ".validate": "newData.isString()" },
+          "bannerUrl": { ".validate": "newData.isString()" },
+
+          "updatedAt": {
+            ".validate": "newData.isNumber() || newData.child('.sv').val() == 'timestamp'"
+          },
+          "updatedBy": { ".validate": "newData.isString()" }
+        },
+
+        "upcomingEvents": {
+          "$evtId": {
+            "title": { ".validate": "newData.isString()" },
+            "date": { ".validate": "newData.isString()" },
+            "time": { ".validate": "newData.isString()" },
+            "location": { ".validate": "newData.isString()" },
+            "category": { ".validate": "newData.isString()" },
+            "details": { ".validate": "newData.isString()" }
+          }
+        }
+      }
+    },
+
+    "mayors_clearance_files": {
+      ".read": "auth != null && root.child('admins/' + auth.uid).val() == true",
+      ".write": "auth != null && root.child('admins/' + auth.uid).val() == true"
+    }
+  }
+}

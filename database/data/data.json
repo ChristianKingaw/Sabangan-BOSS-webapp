@@ -1,0 +1,2273 @@
+{
+  "admins": {
+    "GRPoFMzBM8TOr4udKrFV1I8YrWu1": true,
+    "i0OnnQdSLgSC28557T1yYRfO5Cy1": true
+  },
+  "business": {
+    "business_application": {
+      "-Oj3F37P7q8JYb5BvQ8s": {
+        "chat": {
+          "-OjO3BB2MsmNFuMArKAC": {
+            "senderRole": "client",
+            "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+            "text": "hshshs",
+            "ts": 1768873313231
+          },
+          "-OjO3LTbtnOaY6Bk0Z9N": {
+            "senderRole": "client",
+            "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+            "text": "jdndj",
+            "ts": 1768873355375
+          },
+          "-OjOLgcriktKuAKmkwVi": {
+            "senderRole": "client",
+            "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+            "text": "jjbh",
+            "ts": 1768878164815
+          }
+        },
+        "form": {
+          "activities": [
+            {
+              "capitalization": "",
+              "grossSales": "20000",
+              "lineOfBusiness": "Sari-sari store",
+              "tricycleUnits": ""
+            }
+          ],
+          "applicationType": "Renewal",
+          "businessAddress": "jddjdj",
+          "businessEmail": "das@gmail.com",
+          "businessMobile": "0949-464-9461",
+          "businessName": "djdjdb",
+          "businessPostalCode": "2611",
+          "businessType": "Single",
+          "dateOfApplication": "2026-01-16",
+          "emergencyContactMobile": "",
+          "emergencyContactName": "",
+          "firstName": "djdk",
+          "incentiveEntity": "",
+          "lastName": "Hdjd",
+          "lessorName": "",
+          "middleName": "jddj",
+          "ownerAddress": "ljdkdj",
+          "ownerEmail": "das@gmail.com",
+          "ownerMobile": "0946-548-4344",
+          "ownerPostalCode": "2622",
+          "paymentMode": "Annually",
+          "placeRented": false,
+          "registrationDate": "2026-01-15",
+          "registrationNo": "732828",
+          "taxIncentive": "No",
+          "tin": "722828",
+          "totalEmployees": "",
+          "totalFemaleEmployees": "",
+          "tradeName": ""
+        },
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "djdjdb",
+          "createdAt": 1768524105976,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_review",
+          "status": "submitted",
+          "updatedAt": 1768878164858
+        },
+        "requirements": {
+          "Barangay Clearance": {
+            "chat": {
+              "-OjO39wrMxc5xZXCkSXu": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "jsjs",
+                "ts": 1768873308198
+              }
+            },
+            "files": {
+              "-Oj3FCr8UrqobFQ3xEMg": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Oj3F37P7q8JYb5BvQ8s%2FBarangay_Clearance%2F-Oj3FCr8UrqobFQ3xEMg.jpg?alt=media&token=194027f8-96c5-4ff8-93e3-a260a0065b69",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-Oj3F37P7q8JYb5BvQ8s/Barangay_Clearance/-Oj3FCr8UrqobFQ3xEMg.jpg",
+                "uploadedAt": 1768524151489
+              }
+            }
+          },
+          "Community Tax Certificate (Cedula)": {
+            "files": {
+              "-Oj3FG3-LfsshiFVmyiv": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Oj3F37P7q8JYb5BvQ8s%2FCommunity_Tax_Certificate__Cedula_%2F-Oj3FG3-LfsshiFVmyiv.jpg?alt=media&token=33606eaa-f661-4454-a951-1efa892db53a",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-Oj3F37P7q8JYb5BvQ8s/Community_Tax_Certificate__Cedula_/-Oj3FG3-LfsshiFVmyiv.jpg",
+                "uploadedAt": 1768524164485
+              }
+            }
+          },
+          "DTI": {
+            "files": {
+              "-Oj3FKnP64MkqfofVmpi": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Oj3F37P7q8JYb5BvQ8s%2FDTI%2F-Oj3FKnP64MkqfofVmpi.jpg?alt=media&token=3ffeea65-cc1f-4d8d-ab88-44dc78452c5d",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-Oj3F37P7q8JYb5BvQ8s/DTI/-Oj3FKnP64MkqfofVmpi.jpg",
+                "uploadedAt": 1768524184466
+              }
+            }
+          },
+          "Fire Safety Certificate": {
+            "files": {
+              "-Oj3FEU9eynsOL7sv7q_": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Oj3F37P7q8JYb5BvQ8s%2FFire_Safety_Certificate%2F-Oj3FEU9eynsOL7sv7q_.jpg?alt=media&token=bf070cd8-9775-4dd3-b523-0d7974a48888",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-Oj3F37P7q8JYb5BvQ8s/Fire_Safety_Certificate/-Oj3FEU9eynsOL7sv7q_.jpg",
+                "uploadedAt": 1768524157937
+              }
+            }
+          },
+          "Official Receipt of Payment (Treasury)": {
+            "files": {
+              "-Oj3FHeEmNgdwt0Z5vav": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Oj3F37P7q8JYb5BvQ8s%2FOfficial_Receipt_of_Payment__Treasury_%2F-Oj3FHeEmNgdwt0Z5vav.jpg?alt=media&token=620efa81-5539-466e-ac81-1c4998dc4518",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-Oj3F37P7q8JYb5BvQ8s/Official_Receipt_of_Payment__Treasury_/-Oj3FHeEmNgdwt0Z5vav.jpg",
+                "uploadedAt": 1768524170841
+              }
+            }
+          },
+          "Police Clearance": {
+            "files": {
+              "-Oj3FAvn7gZQ7p-J-PxX": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Oj3F37P7q8JYb5BvQ8s%2FPolice_Clearance%2F-Oj3FAvn7gZQ7p-J-PxX.jpg?alt=media&token=f5cd1952-7519-4b36-8d38-b524e203f545",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-Oj3F37P7q8JYb5BvQ8s/Police_Clearance/-Oj3FAvn7gZQ7p-J-PxX.jpg",
+                "uploadedAt": 1768524144826
+              }
+            }
+          },
+          "Sanitary Permit": {
+            "chat": {
+              "-OjO3CNBAJz9CYGl3U_i": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "hdxnxn",
+                "ts": 1768873318132
+              },
+              "-OjO3JhHOc-NjlpIGM_-": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "gshsh",
+                "ts": 1768873348153
+              }
+            },
+            "files": {
+              "-Oj3FJCgMRfI0XQCG7J8": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Oj3F37P7q8JYb5BvQ8s%2FSanitary_Permit%2F-Oj3FJCgMRfI0XQCG7J8.jpg?alt=media&token=aacf5f68-f864-41f8-89ea-73a1491eb440",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-Oj3F37P7q8JYb5BvQ8s/Sanitary_Permit/-Oj3FJCgMRfI0XQCG7J8.jpg",
+                "uploadedAt": 1768524177383
+              }
+            }
+          }
+        },
+        "status": "Pending Update Review"
+      },
+      "-OjOq432Ya9QIhuwAPN0": {
+        "chat": {
+          "-Oje-UmveX-aYlS53G_b": {
+            "senderRole": "client",
+            "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+            "text": "hdjdjd",
+            "ts": 1769157557832
+          }
+        },
+        "form": {
+          "activities": [
+            {
+              "capitalization": "30000",
+              "grossSales": "",
+              "lineOfBusiness": "Sari-sari store",
+              "tricycleUnits": ""
+            }
+          ],
+          "applicationType": "New",
+          "businessAddress": "fjfjf.",
+          "businessEmail": "ass@gmaila.com",
+          "businessMobile": "0909-545-3276",
+          "businessName": "dhh",
+          "businessPostalCode": "2622",
+          "businessType": "Single",
+          "dateOfApplication": "2026-01-20",
+          "emergencyContactMobile": "",
+          "emergencyContactName": "",
+          "firstName": "zvn",
+          "incentiveEntity": "",
+          "lastName": "dhh",
+          "lessorName": "",
+          "middleName": "cvn",
+          "ownerAddress": "gsjdjsdj",
+          "ownerEmail": "as@gmail.com",
+          "ownerMobile": "0988-464-8404",
+          "ownerPostalCode": "2622",
+          "paymentMode": "Annually",
+          "placeRented": false,
+          "registrationDate": "2026-01-20",
+          "registrationNo": "745866",
+          "taxIncentive": "No",
+          "tin": "595959",
+          "totalEmployees": "",
+          "totalFemaleEmployees": "",
+          "tradeName": ""
+        },
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "dhh",
+          "createdAt": 1768886392323,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_review",
+          "status": "submitted",
+          "updatedAt": 1769157557950
+        },
+        "requirements": {
+          "Barangay Clearance": {
+            "chat": {
+              "-OjT8ZWMt4TWdvZDSqSH": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "I re-uploaded the rejected requirement photo. Please review again.",
+                "ts": 1768958609755
+              },
+              "-OjT97Z_dSeRZAcyySX3": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "bdhs",
+                "ts": 1768958757496
+              },
+              "-OjT98-bznFiZsnjmW5Y": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "jsjs",
+                "ts": 1768958759248
+              },
+              "-OjTWBFx_nXVkz2RQsYW": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "I uploaded changes for this requirement. Please review again.",
+                "ts": 1768964801868
+              },
+              "-Oje-IUg3lqE4Zqq717N": {
+                "senderRole": "admin",
+                "senderUid": "i0OnnQdSLgSC28557T1yYRfO5Cy1",
+                "text": "Ahahahhaaha",
+                "ts": 1769157505784
+              }
+            },
+            "files": {
+              "-OjTW92Sl1MdKhhCTDPs": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjOq432Ya9QIhuwAPN0%2FBarangay_Clearance%2F-OjTW92Sl1MdKhhCTDPs.jpg?alt=media&token=5d522c70-674b-465e-8f6b-3dc28dcfea46",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjOq432Ya9QIhuwAPN0/Barangay_Clearance/-OjTW92Sl1MdKhhCTDPs.jpg",
+                "uploadedAt": 1768964801679
+              }
+            }
+          },
+          "Community Tax Certificate (Cedula)": {
+            "chat": {
+              "-OjOqwdEEdeqaqDr4WUW": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "I re-uploaded the rejected requirement photo. Please review again.",
+                "ts": 1768886618899
+              },
+              "-OjOr--dM5hPFV_DxNjX": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "I re-uploaded the rejected requirement photo. Please review again.",
+                "ts": 1768886632884
+              },
+              "-OjTWHlLcjPJRQ3cZiOx": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "I uploaded changes for this requirement. Please review again.",
+                "ts": 1768964828661
+              }
+            },
+            "files": {
+              "-OjTWFwyRXgq5s3-lb5L": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjOq432Ya9QIhuwAPN0%2FCommunity_Tax_Certificate__Cedula_%2F-OjTWFwyRXgq5s3-lb5L.jpg?alt=media&token=f2100e11-ade8-46ad-bf13-fb8feefb4ead",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjOq432Ya9QIhuwAPN0/Community_Tax_Certificate__Cedula_/-OjTWFwyRXgq5s3-lb5L.jpg",
+                "uploadedAt": 1768964828422
+              }
+            }
+          },
+          "DTI": {
+            "chat": {
+              "-OjOxLFCTHZWHKFG5MEL": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "I re-uploaded the rejected requirement photo. Please review again.",
+                "ts": 1768888296656
+              },
+              "-OjOxXvmR-qYUoQeOdKg": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "I re-uploaded the rejected requirement photo. Please review again.",
+                "ts": 1768888348728
+              }
+            },
+            "files": {
+              "-OjOqWyc3cRdm78z3iNU": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjOq432Ya9QIhuwAPN0%2FDTI%2F-OjOqWyc3cRdm78z3iNU.jpg?alt=media&token=39e8f810-5d9b-4916-b7fd-6ae62f9a1099",
+                "reuploadedAt": 1768888348520,
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjOq432Ya9QIhuwAPN0/DTI/-OjOqWyc3cRdm78z3iNU.jpg",
+                "uploadedAt": 1768886513838
+              },
+              "-OjOqY1F7Gl4spUWzcMg": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjOq432Ya9QIhuwAPN0%2FDTI%2F-OjOqY1F7Gl4spUWzcMg.jpg?alt=media&token=051148bc-18c5-4f27-8d02-c48130c39544",
+                "reuploadedAt": 1768888296566,
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjOq432Ya9QIhuwAPN0/DTI/-OjOqY1F7Gl4spUWzcMg.jpg",
+                "uploadedAt": 1768886526243
+              }
+            }
+          },
+          "Fire Safety Certificate": {
+            "files": {
+              "-OjOqQt2-GeAdUvJdGtv": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjOq432Ya9QIhuwAPN0%2FFire_Safety_Certificate%2F-OjOqQt2-GeAdUvJdGtv.jpg?alt=media&token=188bfded-ef65-4753-99a6-51a78610b4d2",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjOq432Ya9QIhuwAPN0/Fire_Safety_Certificate/-OjOqQt2-GeAdUvJdGtv.jpg",
+                "uploadedAt": 1768886493527
+              }
+            }
+          },
+          "Official Receipt of Payment (Treasury)": {
+            "files": {
+              "-OjOqUTQjdA_G1RnTu7H": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjOq432Ya9QIhuwAPN0%2FOfficial_Receipt_of_Payment__Treasury_%2F-OjOqUTQjdA_G1RnTu7H.jpg?alt=media&token=26a160a6-ca34-434e-9436-75196e767fdd",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjOq432Ya9QIhuwAPN0/Official_Receipt_of_Payment__Treasury_/-OjOqUTQjdA_G1RnTu7H.jpg",
+                "uploadedAt": 1768886504646
+              }
+            }
+          },
+          "Police Clearance": {
+            "chat": {
+              "-OjTZ_5XM1f_Xzg8b7Mq": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "I uploaded changes for this requirement. Please review again.",
+                "ts": 1768965690036
+              },
+              "-OjT_BinPlj7gd-vuStx": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "gggh",
+                "ts": 1768965857097
+              },
+              "-OjT_COATMNBMitjOtrU": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "jjhg",
+                "ts": 1768965857103
+              }
+            },
+            "files": {
+              "-OjOqMVDeRuyp2-8pv_w": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjOq432Ya9QIhuwAPN0%2FPolice_Clearance%2F-OjOqMVDeRuyp2-8pv_w.jpg?alt=media&token=9d1e6c4c-eb79-4ed5-bb0f-16ba3e4cf2f4",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjOq432Ya9QIhuwAPN0/Police_Clearance/-OjOqMVDeRuyp2-8pv_w.jpg",
+                "uploadedAt": 1768886475237
+              },
+              "-OjTZZ6y0DTq_dRENDCR": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjOq432Ya9QIhuwAPN0%2FPolice_Clearance%2F-OjTZZ6y0DTq_dRENDCR.jpg?alt=media&token=3c15b1ae-bc6b-41e8-acb9-6fef5abf4c35",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjOq432Ya9QIhuwAPN0/Police_Clearance/-OjTZZ6y0DTq_dRENDCR.jpg",
+                "uploadedAt": 1768965689898
+              }
+            }
+          },
+          "Sanitary Permit": {
+            "files": {
+              "-OjOqVlUWiwkZhTAomb0": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjOq432Ya9QIhuwAPN0%2FSanitary_Permit%2F-OjOqVlUWiwkZhTAomb0.jpg?alt=media&token=e59e7bbb-b5c1-4209-914e-f7b7b72240d2",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjOq432Ya9QIhuwAPN0/Sanitary_Permit/-OjOqVlUWiwkZhTAomb0.jpg",
+                "uploadedAt": 1768886509603
+              }
+            }
+          }
+        },
+        "status": "Pending Update Review"
+      },
+      "-OjTrMdvdgtFbobSJmsR": {
+        "chat": {
+          "-OjTrmIIQnyKKOnVyXAQ": {
+            "senderRole": "client",
+            "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+            "text": "gzhxhxj",
+            "ts": 1768970724856
+          },
+          "-OjTrmoSoNUZNUCt6rAy": {
+            "senderRole": "client",
+            "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+            "text": "hwje",
+            "ts": 1768970726972
+          },
+          "-OjTrn0CLeoQi--vbQna": {
+            "senderRole": "client",
+            "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+            "text": "shs",
+            "ts": 1768970727796
+          }
+        },
+        "form": {
+          "activities": [
+            {
+              "capitalization": "30000",
+              "grossSales": "",
+              "lineOfBusiness": "Sari-sari store",
+              "tricycleUnits": ""
+            }
+          ],
+          "applicationType": "New",
+          "businessAddress": "fjfjf.",
+          "businessEmail": "ass@gmaila.com",
+          "businessMobile": "0909-545-3276",
+          "businessName": "dhh",
+          "businessPostalCode": "2622",
+          "businessType": "Single",
+          "dateOfApplication": "2026-01-20",
+          "emergencyContactMobile": "0946-464-9494",
+          "emergencyContactName": "8382",
+          "firstName": "zvn",
+          "incentiveEntity": "",
+          "lastName": "dhh",
+          "lessorName": "",
+          "middleName": "cvn",
+          "ownerAddress": "gsjdjsdj",
+          "ownerEmail": "as@gmail.com",
+          "ownerMobile": "0988-464-8404",
+          "ownerPostalCode": "2622",
+          "paymentMode": "Annually",
+          "placeRented": false,
+          "registrationDate": "2026-01-20",
+          "registrationNo": "745866",
+          "taxIncentive": "No",
+          "tin": "595959",
+          "totalEmployees": "0",
+          "totalFemaleEmployees": "0",
+          "tradeName": ""
+        },
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "dhh",
+          "createdAt": 1768970615774,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_review",
+          "status": "submitted",
+          "updatedAt": 1768970867176
+        },
+        "requirements": {
+          "Barangay Clearance": {
+            "_exists": true,
+            "files": {
+              "-OjTrUYSpI3EaxwqInn8": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjTrMdvdgtFbobSJmsR%2FBarangay_Clearance%2F-OjTrUYSpI3EaxwqInn8.jpg?alt=media&token=bc615332-f609-41f4-982e-30db20c4d3c3",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjTrMdvdgtFbobSJmsR/Barangay_Clearance/-OjTrUYSpI3EaxwqInn8.jpg",
+                "uploadedAt": 1768970655003
+              }
+            }
+          },
+          "Community Tax Certificate (Cedula)": {
+            "_exists": true,
+            "files": {
+              "-OjTrY6na77a7tyS4lcc": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjTrMdvdgtFbobSJmsR%2FCommunity_Tax_Certificate__Cedula_%2F-OjTrY6na77a7tyS4lcc.jpg?alt=media&token=d17dca39-fb57-4c31-9874-5806d7ff0ae5",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjTrMdvdgtFbobSJmsR/Community_Tax_Certificate__Cedula_/-OjTrY6na77a7tyS4lcc.jpg",
+                "uploadedAt": 1768970669761
+              }
+            }
+          },
+          "DTI": {
+            "_exists": true,
+            "files": {
+              "-OjTrekCEPwlP28YxpUS": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjTrMdvdgtFbobSJmsR%2FDTI%2F-OjTrekCEPwlP28YxpUS.jpg?alt=media&token=9c7889e2-d8a1-4a6f-9804-c8fb8d5bd18d",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjTrMdvdgtFbobSJmsR/DTI/-OjTrekCEPwlP28YxpUS.jpg",
+                "uploadedAt": 1768970701291
+              }
+            }
+          },
+          "Fire Safety Certificate": {
+            "_exists": true,
+            "files": {
+              "-OjTrWGq3PeFmseg7DNO": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjTrMdvdgtFbobSJmsR%2FFire_Safety_Certificate%2F-OjTrWGq3PeFmseg7DNO.jpg?alt=media&token=5015c9e7-06f4-4a05-844f-33f41d23cf8c",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjTrMdvdgtFbobSJmsR/Fire_Safety_Certificate/-OjTrWGq3PeFmseg7DNO.jpg",
+                "uploadedAt": 1768970662576
+              }
+            }
+          },
+          "Official Receipt of Payment (Treasury)": {
+            "_exists": true,
+            "files": {
+              "-OjTrZs5BOK9mz8KW5Dh": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjTrMdvdgtFbobSJmsR%2FOfficial_Receipt_of_Payment__Treasury_%2F-OjTrZs5BOK9mz8KW5Dh.jpg?alt=media&token=f0f9aa48-b253-4a7a-9462-c591f2c2b837",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjTrMdvdgtFbobSJmsR/Official_Receipt_of_Payment__Treasury_/-OjTrZs5BOK9mz8KW5Dh.jpg",
+                "uploadedAt": 1768970677534
+              }
+            }
+          },
+          "Police Clearance": {
+            "_exists": true,
+            "chat": {
+              "-OjTrtewHVkd_oF78f2s": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "I uploaded changes for this requirement. Please review again.",
+                "ts": 1768970755031
+              },
+              "-OjTs5tIvH7FFRWaMGpK": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "I uploaded changes for this requirement. Please review again.",
+                "ts": 1768970809239
+              },
+              "-OjTsDopK0rmPeHujF_w": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "I uploaded changes for this requirement. Please review again.",
+                "ts": 1768970841663
+              },
+              "-OjTsK0fFUUUfwIHzYFs": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "I uploaded changes for this requirement. Please review again.",
+                "ts": 1768970867059
+              }
+            },
+            "files": {
+              "-OjTsIGVHoISeL_V9Ro-": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjTrMdvdgtFbobSJmsR%2FPolice_Clearance%2F-OjTsIGVHoISeL_V9Ro-.jpg?alt=media&token=b9a7b922-c245-4452-8c45-9d8e7657e9de",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjTrMdvdgtFbobSJmsR/Police_Clearance/-OjTsIGVHoISeL_V9Ro-.jpg",
+                "uploadedAt": 1768970866996
+              }
+            }
+          },
+          "Sanitary Permit": {
+            "_exists": true,
+            "files": {
+              "-OjTralcf_aIIYIDvDX2": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjTrMdvdgtFbobSJmsR%2FSanitary_Permit%2F-OjTralcf_aIIYIDvDX2.jpg?alt=media&token=3ee5a209-9119-4c6c-b7b8-15a3d9c03f1d",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjTrMdvdgtFbobSJmsR/Sanitary_Permit/-OjTralcf_aIIYIDvDX2.jpg",
+                "uploadedAt": 1768970685322
+              },
+              "-OjTrcf7_YxlVH0vgNjU": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjTrMdvdgtFbobSJmsR%2FSanitary_Permit%2F-OjTrcf7_YxlVH0vgNjU.jpg?alt=media&token=ba13523a-9df9-4b91-bf3f-139ea3e0abc9",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjTrMdvdgtFbobSJmsR/Sanitary_Permit/-OjTrcf7_YxlVH0vgNjU.jpg",
+                "uploadedAt": 1768970693826
+              }
+            }
+          }
+        },
+        "status": "Pending Update Review"
+      },
+      "-OjUarM3YBrZ2y8Wtmfs": {
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "dhh",
+          "createdAt": 1768983066880,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "status": "draft",
+          "updatedAt": 1768983066880
+        }
+      },
+      "-OjcQoKLUL7_ouVeC927": {
+        "form": {
+          "activities": [
+            {
+              "capitalization": "5000",
+              "grossSales": "",
+              "lineOfBusiness": "Sari-sari store",
+              "tricycleUnits": ""
+            }
+          ],
+          "applicationType": "New",
+          "businessAddress": "Camatagan,Sabangan, Moutain Province, Sabangan, Mountain Province",
+          "businessEmail": "wizassasinmontelli@gmail.com",
+          "businessMobile": "0949-694-0616",
+          "businessName": "hssjsnnsns",
+          "businessPostalCode": "2622",
+          "businessType": "Single",
+          "dateOfApplication": "2026-01-23",
+          "emergencyContactMobile": "0946-454-8464",
+          "emergencyContactName": "hsjwj",
+          "firstName": "Bus",
+          "incentiveEntity": "",
+          "lastName": "Das",
+          "lessorName": "",
+          "middleName": "Yam",
+          "ownerAddress": "Camatagan,Sabangan, Moutain Province, Sabangan, Mountain Province",
+          "ownerEmail": "wizassasinmontelli@gmail.com",
+          "ownerMobile": "0949-694-0616",
+          "ownerPostalCode": "2622",
+          "paymentMode": "Annually",
+          "placeRented": false,
+          "registrationDate": "2026-01-23",
+          "registrationNo": "7272727",
+          "taxIncentive": "No",
+          "tin": "6382828",
+          "totalEmployees": "0",
+          "totalFemaleEmployees": "0",
+          "tradeName": ""
+        },
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "hssjsnnsns",
+          "createdAt": 1769131165389,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_review",
+          "status": "submitted",
+          "updatedAt": 1769131220914
+        },
+        "requirements": {
+          "Barangay Clearance": {
+            "_exists": true,
+            "files": {
+              "-OjcQwlVZZnluLxS2I5-": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjcQoKLUL7_ouVeC927%2FBarangay_Clearance%2F-OjcQwlVZZnluLxS2I5-.jpg?alt=media&token=ac3743ae-60a3-4a14-b081-919349aeae72",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjcQoKLUL7_ouVeC927/Barangay_Clearance/-OjcQwlVZZnluLxS2I5-.jpg",
+                "uploadedAt": 1769131203375
+              }
+            }
+          },
+          "Community Tax Certificate (Cedula)": {
+            "_exists": true,
+            "files": {
+              "-OjcQyaFEzssFG1ixzXi": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjcQoKLUL7_ouVeC927%2FCommunity_Tax_Certificate__Cedula_%2F-OjcQyaFEzssFG1ixzXi.jpg?alt=media&token=beb63d37-f143-4593-bb9f-03c297389916",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjcQoKLUL7_ouVeC927/Community_Tax_Certificate__Cedula_/-OjcQyaFEzssFG1ixzXi.jpg",
+                "uploadedAt": 1769131210843
+              }
+            }
+          },
+          "DTI": {
+            "_exists": true,
+            "files": {
+              "-OjcR03Y5uMIfNhCXwHb": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjcQoKLUL7_ouVeC927%2FDTI%2F-OjcR03Y5uMIfNhCXwHb.jpg?alt=media&token=98fbd254-6f49-4320-bca2-0ec852b61301",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjcQoKLUL7_ouVeC927/DTI/-OjcR03Y5uMIfNhCXwHb.jpg",
+                "uploadedAt": 1769131220793
+              }
+            }
+          },
+          "Fire Safety Certificate": {
+            "_exists": true,
+            "files": {
+              "-OjcQxd9NbWd3oaU1d8a": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjcQoKLUL7_ouVeC927%2FFire_Safety_Certificate%2F-OjcQxd9NbWd3oaU1d8a.jpg?alt=media&token=9d245da9-3479-4d69-a4f8-1bc79230a58d",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjcQoKLUL7_ouVeC927/Fire_Safety_Certificate/-OjcQxd9NbWd3oaU1d8a.jpg",
+                "uploadedAt": 1769131207257
+              }
+            }
+          },
+          "Official Receipt of Payment (Treasury)": {
+            "_exists": true,
+            "files": {
+              "-OjcQzUD1TSGbAQI_JCj": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjcQoKLUL7_ouVeC927%2FOfficial_Receipt_of_Payment__Treasury_%2F-OjcQzUD1TSGbAQI_JCj.jpg?alt=media&token=83be0ef7-3267-4e1c-90c8-32c8d38f2e2c",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjcQoKLUL7_ouVeC927/Official_Receipt_of_Payment__Treasury_/-OjcQzUD1TSGbAQI_JCj.jpg",
+                "uploadedAt": 1769131214352
+              }
+            }
+          },
+          "Police Clearance": {
+            "_exists": true,
+            "files": {
+              "-OjcQveY-YI-Lu3aUv6P": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjcQoKLUL7_ouVeC927%2FPolice_Clearance%2F-OjcQveY-YI-Lu3aUv6P.jpg?alt=media&token=44712143-dfc0-4b7a-8329-ffbc906f60ea",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjcQoKLUL7_ouVeC927/Police_Clearance/-OjcQveY-YI-Lu3aUv6P.jpg",
+                "uploadedAt": 1769131199792
+              }
+            }
+          },
+          "Sanitary Permit": {
+            "_exists": true,
+            "files": {
+              "-OjcR-Jd6oHtNyEFeMCT": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjcQoKLUL7_ouVeC927%2FSanitary_Permit%2F-OjcR-Jd6oHtNyEFeMCT.jpg?alt=media&token=a9f8b86b-f376-4e4a-ad1a-5440b505d271",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjcQoKLUL7_ouVeC927/Sanitary_Permit/-OjcR-Jd6oHtNyEFeMCT.jpg",
+                "uploadedAt": 1769131217417
+              }
+            }
+          }
+        },
+        "status": "Pending Update Review"
+      },
+      "-Ojd1V04Z3Qbmh9xO6f1": {
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "hssjsnnsns",
+          "createdAt": 1769141305821,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "status": "draft",
+          "updatedAt": 1769141305821
+        }
+      },
+      "-Ojd3BOljNG5wMmCKy4W": {
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "hssjsnnsns",
+          "createdAt": 1769141749785,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "status": "draft",
+          "updatedAt": 1769141749785
+        }
+      },
+      "-Ojd66UT2lD-TvzKp2bK": {
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "hssjsnnsns",
+          "createdAt": 1769142516055,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "status": "draft",
+          "updatedAt": 1769142516055
+        }
+      },
+      "-Ojd8OjXKzx8ppmk36z8": {
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "hssjsnnsns",
+          "createdAt": 1769143115127,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "status": "draft",
+          "updatedAt": 1769143115127
+        }
+      },
+      "-Ojd9q1feVwLDzqm9QO7": {
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "hssjsnnsns",
+          "createdAt": 1769143493209,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "status": "draft",
+          "updatedAt": 1769143493209
+        }
+      },
+      "-OjdA0ed1ruBlBF_qX7t": {
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "hssjsnnsns",
+          "createdAt": 1769143540792,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "status": "draft",
+          "updatedAt": 1769143540792
+        }
+      },
+      "-OjdB4xtSfwnML8n6eqj": {
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "Juan Sari-Sari Store",
+          "createdAt": 1769143824575,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "status": "draft",
+          "updatedAt": 1769143824575
+        }
+      },
+      "-OjdRbENj9ZC66X9v8FO": {
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "hssjsnnsns",
+          "createdAt": 1769148151143,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "status": "draft",
+          "updatedAt": 1769148151143
+        }
+      },
+      "-OjdRis0G902qNhpH-m3": {
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "hssjsnnsns",
+          "createdAt": 1769148182456,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "status": "draft",
+          "updatedAt": 1769148182456
+        }
+      },
+      "-OjdRo6HRlLv4CD7AYIs": {
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "hssjsnnsns",
+          "createdAt": 1769148203889,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "status": "draft",
+          "updatedAt": 1769148203889
+        }
+      },
+      "-OjdRvHeHgmwQIiEpi4z": {
+        "chat": {
+          "-Ojd_ml6UF17EQPkbCFV": {
+            "senderRole": "client",
+            "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+            "text": "bxndnd",
+            "ts": 1769150557634
+          }
+        },
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "hssjsnnsns",
+          "createdAt": 1769148233291,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "status": "draft",
+          "updatedAt": 1769150557763
+        }
+      },
+      "-OjddeKJIcMMwnJxUnim": {
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "hssjsnnsns",
+          "createdAt": 1769151571694,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "status": "draft",
+          "updatedAt": 1769151571694
+        }
+      },
+      "-Ojddk3pDx7jOfE1AWgm": {
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "hssjsnnsns",
+          "createdAt": 1769151595256,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "status": "draft",
+          "updatedAt": 1769151595256
+        }
+      },
+      "-OjddqcZlYODEmc_8qeo": {
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "hssjsnnsns",
+          "createdAt": 1769151622083,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "status": "draft",
+          "updatedAt": 1769151622083
+        }
+      },
+      "-OjdgQA-WmvxYTMjjhew": {
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "hssjsnnsns",
+          "createdAt": 1769152296039,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "status": "draft",
+          "updatedAt": 1769152296039
+        }
+      },
+      "-Ojdj8X2Q_UMFJAfvrGX": {
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "hssjsnnsns",
+          "createdAt": 1769153010412,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "status": "draft",
+          "updatedAt": 1769153010412
+        }
+      },
+      "-OjdjIROx77gtooMIX5r": {
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "hssjsnnsns",
+          "createdAt": 1769153050853,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "status": "draft",
+          "updatedAt": 1769153050853
+        }
+      },
+      "-OjdjM63Pm41aA2Dpa9B": {
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "hssjsnnsns",
+          "createdAt": 1769153065826,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "status": "draft",
+          "updatedAt": 1769153065826
+        }
+      },
+      "-OjdjNw06XMt0IyhwfMr": {
+        "fees": {
+          "breakdown": {
+            "DST": 90,
+            "Mayor's Permit (Activity 1: Mini Grocery • Cottage)": 1800,
+            "Mayor's Permit (Total)": 1800,
+            "Mayor’s Clearance & Certification": 200,
+            "Sanitary Permit": 100,
+            "Subscription Fee": 100,
+            "Weights & Measures": 100
+          },
+          "computedAt": 1769153284043,
+          "inputs": {
+            "applicationType": "New",
+            "businessType": "Single",
+            "clearanceCertification": 200,
+            "grossTotal": 0,
+            "hasRetailStore": true,
+            "permitLines": [
+              {
+                "alcohol": 500,
+                "base": 500,
+                "bracket": "Cottage",
+                "gross": 0,
+                "index": 0,
+                "lineOfBusiness": "Mini Grocery",
+                "lpg": 500,
+                "tobacco": 300,
+                "total": 1800
+              }
+            ],
+            "taxApplied": false
+          },
+          "rulesVersion": "v3-2026-01-retail-brackets-clearance200-no-vape",
+          "total": 2390
+        },
+        "form": {
+          "activities": [
+            {
+              "capitalization": "500000",
+              "grossSales": "",
+              "lineOfBusiness": "Mini Grocery",
+              "sellsAlcohol": true,
+              "sellsLpg": true,
+              "sellsTobacco": true,
+              "tricycleUnits": ""
+            }
+          ],
+          "applicationType": "New",
+          "businessAddress": "Camatagan,Sabangan, Moutain Province, Sabangan, Mountain Province",
+          "businessEmail": "wizassasinmontelli@gmail.com",
+          "businessMobile": "0949-694-0616",
+          "businessName": "hssjsnnsns",
+          "businessPostalCode": "2622",
+          "businessType": "Single",
+          "dateOfApplication": "2026-01-23",
+          "emergencyContactMobile": "0946-454-8464",
+          "emergencyContactName": "hsjwj",
+          "firstName": "Bus",
+          "incentiveEntity": "",
+          "lastName": "Das",
+          "lessorName": "",
+          "middleName": "Yam",
+          "ownerAddress": "Camatagan,Sabangan, Moutain Province, Sabangan, Mountain Province",
+          "ownerEmail": "wizassasinmontelli@gmail.com",
+          "ownerMobile": "0949-694-0616",
+          "ownerPostalCode": "2622",
+          "paymentMode": "Annually",
+          "placeRented": false,
+          "registrationDate": "2026-01-23",
+          "registrationNo": "7272727",
+          "taxIncentive": "No",
+          "tin": "6382828",
+          "totalEmployees": "0",
+          "totalFemaleEmployees": "0",
+          "tradeName": ""
+        },
+        "meta": {
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "businessName": "hssjsnnsns",
+          "createdAt": 1769153073341,
+          "feeEstimateTotal": 2390,
+          "feesComputedAt": 1769153335980,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_review",
+          "status": "submitted",
+          "updatedAt": 1769153641818
+        },
+        "requirements": {
+          "Barangay Clearance": {
+            "_exists": true,
+            "files": {
+              "-OjdkE57cHIesySUy7fD": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjdjNw06XMt0IyhwfMr%2FBarangay_Clearance%2F-OjdkE57cHIesySUy7fD.jpg?alt=media&token=3e8f4516-22e8-4ee3-bf64-aac28af12c92",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjdjNw06XMt0IyhwfMr/Barangay_Clearance/-OjdkE57cHIesySUy7fD.jpg",
+                "uploadedAt": 1769153307997
+              }
+            }
+          },
+          "DTI": {
+            "_exists": true,
+            "files": {
+              "-OjdkMBIwXbYD4LE4YpE": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjdjNw06XMt0IyhwfMr%2FDTI%2F-OjdkMBIwXbYD4LE4YpE.jpg?alt=media&token=5be31ee7-7b50-425c-b350-1d0b76e57f6e",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjdjNw06XMt0IyhwfMr/DTI/-OjdkMBIwXbYD4LE4YpE.jpg",
+                "uploadedAt": 1769153335839
+              }
+            }
+          },
+          "Fire Safety Certificate": {
+            "_exists": true,
+            "files": {
+              "-OjdkHGA7W_aR_VTWqXP": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjdjNw06XMt0IyhwfMr%2FFire_Safety_Certificate%2F-OjdkHGA7W_aR_VTWqXP.jpg?alt=media&token=11f0d09f-6487-4c21-b252-c145eba88337",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjdjNw06XMt0IyhwfMr/Fire_Safety_Certificate/-OjdkHGA7W_aR_VTWqXP.jpg",
+                "uploadedAt": 1769153321785
+              }
+            }
+          },
+          "Police Clearance": {
+            "_exists": true,
+            "chat": {
+              "-OjdlYhjJXgyRjbK6kag": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "I uploaded changes for this requirement. Please review again.",
+                "ts": 1769153641694
+              }
+            },
+            "files": {
+              "-OjdkBY-JiOLyKrW_GoT": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjdjNw06XMt0IyhwfMr%2FPolice_Clearance%2F-OjdkBY-JiOLyKrW_GoT.jpg?alt=media&token=9c2f66f7-45ea-4de7-835f-17bed69afbb7",
+                "reuploadedAt": 1769153641526,
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjdjNw06XMt0IyhwfMr/Police_Clearance/-OjdkBY-JiOLyKrW_GoT.jpg",
+                "uploadedAt": 1769153294977
+              }
+            }
+          },
+          "Sanitary Permit": {
+            "_exists": true,
+            "files": {
+              "-OjdkKcp2Q4mqcC_fDBU": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjdjNw06XMt0IyhwfMr%2FSanitary_Permit%2F-OjdkKcp2Q4mqcC_fDBU.jpg?alt=media&token=1be51dbb-1e23-4ca9-b66b-4085f4c01736",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OjdjNw06XMt0IyhwfMr/Sanitary_Permit/-OjdkKcp2Q4mqcC_fDBU.jpg",
+                "uploadedAt": 1769153328165
+              }
+            }
+          }
+        },
+        "status": "Pending Update Review"
+      },
+      "-Ojdukn6TeDaJkTSx3HP": {
+        "draftFees": {
+          "breakdown": {
+            "DST": 90,
+            "Mayor's Permit (Activity 1: Mini Grocery • Cottage)": 3000,
+            "Mayor's Permit (Total)": 3000,
+            "Mayor’s Clearance & Certification": 200,
+            "Sanitary Permit": 100,
+            "Subscription Fee": 100,
+            "Weights & Measures": 100
+          },
+          "computedAt": 1769156054627,
+          "inputs": {
+            "applicationType": "New",
+            "autoTobacco1500AppliedTo": [
+              "Grocery",
+              "Mini Grocery"
+            ],
+            "businessType": "Single",
+            "clearanceCertification": 200,
+            "grossTotal": 0,
+            "hasRetailStore": true,
+            "taxApplied": false
+          },
+          "rulesVersion": "v4-2026-01-retail-brackets-clearance200-autotobacco1500-no-vape",
+          "total": 3590
+        },
+        "draftForm": {
+          "activities": [
+            {
+              "capitalization": "60000",
+              "grossSales": "",
+              "lineOfBusiness": "Mini Grocery",
+              "sellsAlcohol": true,
+              "sellsLpg": true,
+              "sellsTobacco": true,
+              "tricycleUnits": ""
+            }
+          ],
+          "applicationType": "New",
+          "businessAddress": "Camatagan,Sabangan, Moutain Province, Sabangan, Mountain Province",
+          "businessEmail": "wizassasinmontelli@gmail.com",
+          "businessMobile": "0949-694-0616",
+          "businessName": "hssjsnnsns",
+          "businessPostalCode": "2622",
+          "businessType": "Single",
+          "dateOfApplication": "2026-01-23",
+          "emergencyContactMobile": "0946-454-8464",
+          "emergencyContactName": "hsjwj",
+          "firstName": "Bus",
+          "incentiveEntity": "",
+          "lastName": "Das",
+          "lessorName": "",
+          "middleName": "Yam",
+          "ownerAddress": "Camatagan,Sabangan, Moutain Province, Sabangan, Mountain Province",
+          "ownerEmail": "wizassasinmontelli@gmail.com",
+          "ownerMobile": "0949-694-0616",
+          "ownerPostalCode": "2622",
+          "paymentMode": "Annually",
+          "placeRented": false,
+          "registrationDate": "2026-01-23",
+          "registrationNo": "7272727",
+          "taxIncentive": "No",
+          "tin": "6382828",
+          "totalEmployees": "0",
+          "totalFemaleEmployees": "0",
+          "tradeName": ""
+        },
+        "meta": {
+          "applicantName": "Bus Das",
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "applicationType": "New",
+          "businessName": "hssjsnnsns",
+          "businessType": "Single",
+          "createdAt": 1769156054627,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "paymentMode": "Annually",
+          "status": "draft",
+          "updatedAt": 1769156054627
+        }
+      },
+      "-Ojdw_-bcnavJgJ7Ju-H": {
+        "chat": {
+          "-Oje-bA6bLiSrD-i3uik": {
+            "senderRole": "client",
+            "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+            "text": "jdjdjd",
+            "ts": 1769157588032
+          },
+          "-Oje-fRxyhYnWHTrB_oL": {
+            "senderRole": "client",
+            "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+            "text": "djjdd",
+            "ts": 1769157605533
+          },
+          "-Oje-nzhpGOWmqq54UYf": {
+            "senderRole": "client",
+            "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+            "text": "hdjeu",
+            "ts": 1769157640549
+          },
+          "-Oje-r5N9YztYhDrLZZw": {
+            "senderRole": "client",
+            "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+            "text": "kdje",
+            "ts": 1769157653260
+          },
+          "-Oje-rZuYQt1vpJaBruV": {
+            "senderRole": "client",
+            "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+            "text": "jdj",
+            "ts": 1769157655236
+          }
+        },
+        "fees": {
+          "breakdown": {
+            "DST": 90,
+            "Mayor's Permit (Activity 1: Mini Grocery • Cottage)": 3000,
+            "Mayor's Permit (Total)": 3000,
+            "Mayor’s Clearance & Certification": 200,
+            "Sanitary Permit": 100,
+            "Subscription Fee": 100,
+            "Weights & Measures": 100
+          },
+          "computedAt": 1769156594394,
+          "inputs": {
+            "applicationType": "New",
+            "autoTobacco1500AppliedTo": [
+              "Grocery",
+              "Mini Grocery"
+            ],
+            "businessType": "Single",
+            "clearanceCertification": 200,
+            "grossTotal": 0,
+            "hasRetailStore": true,
+            "taxApplied": false
+          },
+          "rulesVersion": "v4-2026-01-retail-brackets-clearance200-autotobacco1500-no-vape",
+          "total": 3590
+        },
+        "form": {
+          "activities": [
+            {
+              "capitalization": "60000",
+              "grossSales": "",
+              "lineOfBusiness": "Mini Grocery",
+              "sellsAlcohol": true,
+              "sellsLpg": true,
+              "sellsTobacco": true,
+              "tricycleUnits": ""
+            }
+          ],
+          "applicationType": "New",
+          "businessAddress": "Camatagan,Sabangan, Moutain Province, Sabangan, Mountain Province",
+          "businessEmail": "wizassasinmontelli@gmail.com",
+          "businessMobile": "0949-694-0616",
+          "businessName": "hssjsnnsns",
+          "businessPostalCode": "2622",
+          "businessType": "Single",
+          "dateOfApplication": "2026-01-23",
+          "emergencyContactMobile": "0946-454-8464",
+          "emergencyContactName": "hsjwj",
+          "firstName": "Bus",
+          "incentiveEntity": "",
+          "lastName": "Das",
+          "lessorName": "",
+          "middleName": "Yam",
+          "ownerAddress": "Camatagan,Sabangan, Moutain Province, Sabangan, Mountain Province",
+          "ownerEmail": "wizassasinmontelli@gmail.com",
+          "ownerMobile": "0949-694-0616",
+          "ownerPostalCode": "2622",
+          "paymentMode": "Annually",
+          "placeRented": false,
+          "registrationDate": "2026-01-23",
+          "registrationNo": "7272727",
+          "taxIncentive": "No",
+          "tin": "6382828",
+          "totalEmployees": "0",
+          "totalFemaleEmployees": "0",
+          "tradeName": ""
+        },
+        "meta": {
+          "applicantName": "Bus Das",
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "applicationType": "New",
+          "businessName": "hssjsnnsns",
+          "businessType": "Single",
+          "createdAt": 1769156530700,
+          "feeEstimateTotal": 3590,
+          "feesComputedAt": 1769156647877,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_review",
+          "paymentMode": "Annually",
+          "status": "submitted",
+          "updatedAt": 1769157655348
+        },
+        "requirements": {
+          "Barangay Clearance": {
+            "_exists": true,
+            "files": {
+              "-OjdwuQ2iuCUiRrBQOze": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Ojdw_-bcnavJgJ7Ju-H%2FBarangay_Clearance%2F-OjdwuQ2iuCUiRrBQOze.jpg?alt=media&token=8ca9c1be-aad8-4024-9d3d-1565382088bd",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-Ojdw_-bcnavJgJ7Ju-H/Barangay_Clearance/-OjdwuQ2iuCUiRrBQOze.jpg",
+                "uploadedAt": 1769156625791
+              }
+            }
+          },
+          "DTI": {
+            "_exists": true,
+            "chat": {
+              "-Oje-pEVl4EpgJK9L6Dk": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "bsbs",
+                "ts": 1769157645660
+              }
+            },
+            "files": {
+              "-OjdwzqCesFWea_Jfu1R": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Ojdw_-bcnavJgJ7Ju-H%2FDTI%2F-OjdwzqCesFWea_Jfu1R.jpg?alt=media&token=b8053f88-0702-4819-9e3a-7f67a343034a",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-Ojdw_-bcnavJgJ7Ju-H/DTI/-OjdwzqCesFWea_Jfu1R.jpg",
+                "uploadedAt": 1769156647693
+              }
+            }
+          },
+          "Fire Safety Certificate": {
+            "_exists": true,
+            "files": {
+              "-OjdwwGdqzSqKwpeJJPa": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Ojdw_-bcnavJgJ7Ju-H%2FFire_Safety_Certificate%2F-OjdwwGdqzSqKwpeJJPa.jpg?alt=media&token=29912254-cc42-493e-869c-f8c52bab58dd",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-Ojdw_-bcnavJgJ7Ju-H/Fire_Safety_Certificate/-OjdwwGdqzSqKwpeJJPa.jpg",
+                "uploadedAt": 1769156633581
+              }
+            }
+          },
+          "Police Clearance": {
+            "_exists": true,
+            "files": {
+              "-OjdwojljhmujKCK4f7I": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Ojdw_-bcnavJgJ7Ju-H%2FPolice_Clearance%2F-OjdwojljhmujKCK4f7I.jpg?alt=media&token=fac48ccf-a03e-47f9-b15a-164ee7461c58",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-Ojdw_-bcnavJgJ7Ju-H/Police_Clearance/-OjdwojljhmujKCK4f7I.jpg",
+                "uploadedAt": 1769156618204
+              }
+            }
+          },
+          "Sanitary Permit": {
+            "_exists": true,
+            "files": {
+              "-OjdwyAX5-0SKU2YD4Xp": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Ojdw_-bcnavJgJ7Ju-H%2FSanitary_Permit%2F-OjdwyAX5-0SKU2YD4Xp.jpg?alt=media&token=042fe32b-28b0-4496-9230-f36cc168a02e",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-Ojdw_-bcnavJgJ7Ju-H/Sanitary_Permit/-OjdwyAX5-0SKU2YD4Xp.jpg",
+                "uploadedAt": 1769156640421
+              }
+            }
+          }
+        },
+        "status": "Pending Update Review"
+      },
+      "-OjdxsAdhjQnNoIRWGLz": {
+        "draftFees": {
+          "breakdown": {
+            "Basic Community Tax (Cedula basis)": 35,
+            "Business Tax (2% of gross)": 600,
+            "DST": 90,
+            "Mayor's Permit (Activity 1: Sari-sari store • Cottage)": 1800,
+            "Mayor's Permit (Total)": 1800,
+            "Mayor’s Clearance & Certification": 200,
+            "Sanitary Permit": 100,
+            "Subscription Fee": 100,
+            "Weights & Measures": 100
+          },
+          "computedAt": 1769156871330,
+          "inputs": {
+            "applicationType": "Renewal",
+            "autoTobacco1500AppliedTo": [
+              "Grocery",
+              "Mini Grocery"
+            ],
+            "businessType": "Single",
+            "clearanceCertification": 200,
+            "grossTotal": 30000,
+            "hasRetailStore": true,
+            "taxApplied": true
+          },
+          "rulesVersion": "v4-2026-01-retail-brackets-clearance200-autotobacco1500-no-vape",
+          "total": 3025
+        },
+        "draftForm": {
+          "activities": [
+            {
+              "capitalization": "",
+              "grossSales": "30000",
+              "lineOfBusiness": "Sari-sari store",
+              "sellsAlcohol": true,
+              "sellsLpg": true,
+              "sellsTobacco": true,
+              "tricycleUnits": ""
+            }
+          ],
+          "applicationType": "Renewal",
+          "businessAddress": "Camatagan,Sabangan, Moutain Province, Sabangan, Mountain Province",
+          "businessEmail": "wizassasinmontelli@gmail.com",
+          "businessMobile": "0949-694-0616",
+          "businessName": "hssjsnnsns",
+          "businessPostalCode": "2622",
+          "businessType": "Single",
+          "dateOfApplication": "2026-01-23",
+          "emergencyContactMobile": "0946-454-8464",
+          "emergencyContactName": "hsjwj",
+          "firstName": "Bus",
+          "incentiveEntity": "",
+          "lastName": "Das",
+          "lessorName": "",
+          "middleName": "Yam",
+          "ownerAddress": "Camatagan,Sabangan, Moutain Province, Sabangan, Mountain Province",
+          "ownerEmail": "wizassasinmontelli@gmail.com",
+          "ownerMobile": "0949-694-0616",
+          "ownerPostalCode": "2622",
+          "paymentMode": "Annually",
+          "placeRented": false,
+          "registrationDate": "2026-01-23",
+          "registrationNo": "7272727",
+          "taxIncentive": "No",
+          "tin": "6382828",
+          "totalEmployees": "0",
+          "totalFemaleEmployees": "0",
+          "tradeName": ""
+        },
+        "meta": {
+          "applicantName": "Bus Das",
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "applicationType": "Renewal",
+          "businessName": "hssjsnnsns",
+          "businessType": "Single",
+          "createdAt": 1769156871330,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "paymentMode": "Annually",
+          "status": "draft",
+          "updatedAt": 1769156871330
+        }
+      },
+      "-Ojdy6wr_IoiinhM8zBU": {
+        "draftFees": {
+          "breakdown": {
+            "Basic Community Tax (Cedula basis)": 505,
+            "Business Tax (2% of gross)": 10000,
+            "DST": 90,
+            "Mayor's Permit (Activity 1: Sari-sari store • Large)": 5000,
+            "Mayor's Permit (Total)": 5000,
+            "Mayor’s Clearance & Certification": 200,
+            "Sanitary Permit": 100,
+            "Subscription Fee": 100,
+            "Weights & Measures": 100
+          },
+          "computedAt": 1769156935897,
+          "inputs": {
+            "applicationType": "Renewal",
+            "autoTobacco1500AppliedTo": [
+              "Grocery",
+              "Mini Grocery"
+            ],
+            "businessType": "Single",
+            "clearanceCertification": 200,
+            "grossTotal": 500000,
+            "hasRetailStore": true,
+            "taxApplied": true
+          },
+          "rulesVersion": "v4-2026-01-retail-brackets-clearance200-autotobacco1500-no-vape",
+          "total": 16095
+        },
+        "draftForm": {
+          "activities": [
+            {
+              "capitalization": "",
+              "grossSales": "500000",
+              "lineOfBusiness": "Sari-sari store",
+              "sellsAlcohol": true,
+              "sellsLpg": true,
+              "sellsTobacco": true,
+              "tricycleUnits": ""
+            }
+          ],
+          "applicationType": "Renewal",
+          "businessAddress": "Camatagan,Sabangan, Moutain Province, Sabangan, Mountain Province",
+          "businessEmail": "wizassasinmontelli@gmail.com",
+          "businessMobile": "0949-694-0616",
+          "businessName": "hssjsnnsns",
+          "businessPostalCode": "2622",
+          "businessType": "Single",
+          "dateOfApplication": "2026-01-23",
+          "emergencyContactMobile": "0946-454-8464",
+          "emergencyContactName": "hsjwj",
+          "firstName": "Bus",
+          "incentiveEntity": "",
+          "lastName": "Das",
+          "lessorName": "",
+          "middleName": "Yam",
+          "ownerAddress": "Camatagan,Sabangan, Moutain Province, Sabangan, Mountain Province",
+          "ownerEmail": "wizassasinmontelli@gmail.com",
+          "ownerMobile": "0949-694-0616",
+          "ownerPostalCode": "2622",
+          "paymentMode": "Annually",
+          "placeRented": false,
+          "registrationDate": "2026-01-23",
+          "registrationNo": "7272727",
+          "taxIncentive": "No",
+          "tin": "6382828",
+          "totalEmployees": "0",
+          "totalFemaleEmployees": "0",
+          "tradeName": ""
+        },
+        "meta": {
+          "applicantName": "Bus Das",
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "applicationType": "Renewal",
+          "businessName": "hssjsnnsns",
+          "businessType": "Single",
+          "createdAt": 1769156935897,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "paymentMode": "Annually",
+          "status": "draft",
+          "updatedAt": 1769156935897
+        }
+      },
+      "-Oje00Z-vkIKYQmoVH0J": {
+        "chat": {
+          "-Oje0KZdxjMT0NasehQs": {
+            "senderRole": "client",
+            "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+            "text": "fgjf",
+            "ts": 1769157778148
+          }
+        },
+        "fees": {
+          "breakdown": {
+            "DST": 90,
+            "Mayor's Permit (Activity 1: Mini Grocery • Cottage)": 3000,
+            "Mayor's Permit (Total)": 3000,
+            "Mayor’s Clearance & Certification": 200,
+            "Sanitary Permit": 100,
+            "Subscription Fee": 100,
+            "Weights & Measures": 100
+          },
+          "computedAt": 1769157721968,
+          "inputs": {
+            "applicationType": "New",
+            "autoTobacco1500AppliedTo": [
+              "Grocery",
+              "Mini Grocery"
+            ],
+            "businessType": "Single",
+            "clearanceCertification": 200,
+            "grossTotal": 0,
+            "hasRetailStore": true,
+            "taxApplied": false
+          },
+          "rulesVersion": "v4-2026-01-retail-brackets-clearance200-autotobacco1500-no-vape",
+          "total": 3590
+        },
+        "form": {
+          "activities": [
+            {
+              "capitalization": "60000",
+              "grossSales": "",
+              "lineOfBusiness": "Mini Grocery",
+              "sellsAlcohol": true,
+              "sellsLpg": true,
+              "sellsTobacco": true,
+              "tricycleUnits": ""
+            }
+          ],
+          "applicationType": "New",
+          "businessAddress": "Camatagan,Sabangan, Moutain Province, Sabangan, Mountain Province",
+          "businessEmail": "wizassasinmontelli@gmail.com",
+          "businessMobile": "0949-694-0616",
+          "businessName": "Sabangan",
+          "businessPostalCode": "2622",
+          "businessType": "Single",
+          "dateOfApplication": "2026-01-23",
+          "emergencyContactMobile": "0946-454-8464",
+          "emergencyContactName": "hsjwj",
+          "firstName": "Tamad",
+          "incentiveEntity": "",
+          "lastName": "Juan",
+          "lessorName": "",
+          "middleName": "yam",
+          "ownerAddress": "Camatagan,Sabangan, Moutain Province, Sabangan, Mountain Province",
+          "ownerEmail": "wizassasinmontelli@gmail.com",
+          "ownerMobile": "0949-694-0616",
+          "ownerPostalCode": "2622",
+          "paymentMode": "Annually",
+          "placeRented": false,
+          "registrationDate": "2026-01-23",
+          "registrationNo": "7272727",
+          "taxIncentive": "No",
+          "tin": "6382828",
+          "totalEmployees": "0",
+          "totalFemaleEmployees": "0",
+          "tradeName": ""
+        },
+        "meta": {
+          "applicantName": "Tamad Juan",
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "applicationType": "New",
+          "businessName": "Sabangan",
+          "businessType": "Single",
+          "createdAt": 1769157696181,
+          "feeEstimateTotal": 3590,
+          "feesComputedAt": 1769157768571,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_review",
+          "paymentMode": "Annually",
+          "status": "submitted",
+          "updatedAt": 1769157812011
+        },
+        "requirements": {
+          "Barangay Clearance": {
+            "_exists": true,
+            "chat": {
+              "-Oje0JeC3guQgf0JbQr5": {
+                "senderRole": "admin",
+                "senderUid": "i0OnnQdSLgSC28557T1yYRfO5Cy1",
+                "text": "Hello",
+                "ts": 1769157772701
+              },
+              "-Oje0P0nA1JGnPbQV1GE": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "jkfgi",
+                "ts": 1769157796340
+              }
+            },
+            "files": {
+              "-Oje090gtBrZF5n1KexP": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Oje00Z-vkIKYQmoVH0J%2FBarangay_Clearance%2F-Oje090gtBrZF5n1KexP.jpg?alt=media&token=10fe154b-741f-4c89-8e01-27d4be5979ed",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-Oje00Z-vkIKYQmoVH0J/Barangay_Clearance/-Oje090gtBrZF5n1KexP.jpg",
+                "uploadedAt": 1769157734797
+              }
+            }
+          },
+          "DTI": {
+            "_exists": true,
+            "chat": {
+              "-Oje0SmyI84PlfDsJZg_": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "cmcmc",
+                "ts": 1769157811847
+              }
+            },
+            "files": {
+              "-Oje0GWq5FdT1QiEyWHR": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Oje00Z-vkIKYQmoVH0J%2FDTI%2F-Oje0GWq5FdT1QiEyWHR.jpg?alt=media&token=1f4eef10-b9f9-4fd5-9307-a1a8c7f9f76a",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-Oje00Z-vkIKYQmoVH0J/DTI/-Oje0GWq5FdT1QiEyWHR.jpg",
+                "uploadedAt": 1769157768490
+              }
+            }
+          },
+          "Fire Safety Certificate": {
+            "_exists": true,
+            "files": {
+              "-Oje0A0pFdx-1hvYito4": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Oje00Z-vkIKYQmoVH0J%2FFire_Safety_Certificate%2F-Oje0A0pFdx-1hvYito4.jpg?alt=media&token=4b74a644-4193-467a-9397-7ea2545f0892",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-Oje00Z-vkIKYQmoVH0J/Fire_Safety_Certificate/-Oje0A0pFdx-1hvYito4.jpg",
+                "uploadedAt": 1769157754245
+              }
+            }
+          },
+          "Police Clearance": {
+            "_exists": true,
+            "files": {
+              "-Oje0711a6sf5dYpoUp0": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Oje00Z-vkIKYQmoVH0J%2FPolice_Clearance%2F-Oje0711a6sf5dYpoUp0.jpg?alt=media&token=a85a647c-bb9f-4f9c-9083-e540ef16f274",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-Oje00Z-vkIKYQmoVH0J/Police_Clearance/-Oje0711a6sf5dYpoUp0.jpg",
+                "uploadedAt": 1769157730688
+              }
+            }
+          },
+          "Sanitary Permit": {
+            "_exists": true,
+            "files": {
+              "-Oje0Em3JyM60OX_bsyF": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Oje00Z-vkIKYQmoVH0J%2FSanitary_Permit%2F-Oje0Em3JyM60OX_bsyF.jpg?alt=media&token=acd46e29-f950-4de3-849a-1f7819dd3f76",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-Oje00Z-vkIKYQmoVH0J/Sanitary_Permit/-Oje0Em3JyM60OX_bsyF.jpg",
+                "uploadedAt": 1769157761413
+              }
+            }
+          }
+        }
+      },
+      "-Oje0YGXepeD9cmtJqYW": {
+        "chat": {
+          "-Oje34kIBsWbussg9c5z": {
+            "senderRole": "client",
+            "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+            "text": "jdjdjdbdbdb",
+            "ts": 1769158499753
+          }
+        },
+        "fees": {
+          "breakdown": {
+            "DST": 90,
+            "Mayor's Permit (Activity 1: Mini Grocery • Cottage)": 2000,
+            "Mayor's Permit (Total)": 2000,
+            "Mayor’s Clearance & Certification": 200,
+            "Sanitary Permit": 100,
+            "Subscription Fee": 100,
+            "Weights & Measures": 100
+          },
+          "computedAt": 1769158542843,
+          "inputs": {
+            "applicationType": "New",
+            "autoTobacco1500AppliedTo": [
+              "Grocery",
+              "Mini Grocery"
+            ],
+            "businessType": "Single",
+            "clearanceCertification": 200,
+            "grossTotal": 0,
+            "hasRetailStore": true,
+            "taxApplied": false
+          },
+          "rulesVersion": "v4-2026-01-retail-brackets-clearance200-autotobacco1500-no-vape",
+          "total": 2590
+        },
+        "form": {
+          "activities": [
+            {
+              "capitalization": "60000",
+              "grossSales": "",
+              "lineOfBusiness": "Mini Grocery",
+              "sellsAlcohol": false,
+              "sellsLpg": false,
+              "sellsTobacco": true,
+              "tricycleUnits": ""
+            }
+          ],
+          "applicationType": "New",
+          "businessAddress": "Camatagan,Sabangan, Moutain Province, Sabangan, Mountain Province",
+          "businessEmail": "wizassasinmontelli@gmail.com",
+          "businessMobile": "0949-694-0616",
+          "businessName": "Sabangan",
+          "businessPostalCode": "2622",
+          "businessType": "Single",
+          "dateOfApplication": "2026-01-23",
+          "emergencyContactMobile": "0946-454-8464",
+          "emergencyContactName": "hsjwj",
+          "firstName": "Tamad",
+          "incentiveEntity": "",
+          "lastName": "Juan",
+          "lessorName": "",
+          "middleName": "yam",
+          "ownerAddress": "Camatagan,Sabangan, Moutain Province, Sabangan, Mountain Province",
+          "ownerEmail": "wizassasinmontelli@gmail.com",
+          "ownerMobile": "0949-694-0616",
+          "ownerPostalCode": "2622",
+          "paymentMode": "Annually",
+          "placeRented": false,
+          "registrationDate": "2026-01-23",
+          "registrationNo": "7272727",
+          "taxIncentive": "No",
+          "tin": "6382828",
+          "totalEmployees": "0",
+          "totalFemaleEmployees": "0",
+          "tradeName": ""
+        },
+        "meta": {
+          "applicantName": "Tamad Juan",
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "applicationType": "New",
+          "businessName": "Sabangan",
+          "businessType": "Single",
+          "createdAt": 1769157834248,
+          "feeEstimateTotal": 2590,
+          "feesComputedAt": 1769158642864,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_review",
+          "paymentMode": "Annually",
+          "status": "submitted",
+          "updatedAt": 1769158723471
+        },
+        "requirements": {
+          "Barangay Clearance": {
+            "_exists": true,
+            "files": {
+              "-Oje3JDhPcKrTumrgiyh": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Oje0YGXepeD9cmtJqYW%2FBarangay_Clearance%2F-Oje3JDhPcKrTumrgiyh.jpg?alt=media&token=03e0b867-bb93-405f-8de5-71eb9d681fe8",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-Oje0YGXepeD9cmtJqYW/Barangay_Clearance/-Oje3JDhPcKrTumrgiyh.jpg",
+                "uploadedAt": 1769158577148
+              }
+            }
+          },
+          "DTI": {
+            "_exists": true,
+            "files": {
+              "-Oje3XfsKBGTGjtSR5M6": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Oje0YGXepeD9cmtJqYW%2FDTI%2F-Oje3XfsKBGTGjtSR5M6.jpg?alt=media&token=093b13a8-66ed-4afc-ad33-52560ab1c663",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-Oje0YGXepeD9cmtJqYW/DTI/-Oje3XfsKBGTGjtSR5M6.jpg",
+                "uploadedAt": 1769158642781
+              }
+            }
+          },
+          "Fire Safety Certificate": {
+            "_exists": true,
+            "files": {
+              "-Oje3NfYXkweqcwrWyD0": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Oje0YGXepeD9cmtJqYW%2FFire_Safety_Certificate%2F-Oje3NfYXkweqcwrWyD0.jpg?alt=media&token=704bebf0-4536-421d-8829-6384bea7b0e2",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-Oje0YGXepeD9cmtJqYW/Fire_Safety_Certificate/-Oje3NfYXkweqcwrWyD0.jpg",
+                "uploadedAt": 1769158596388
+              }
+            }
+          },
+          "Police Clearance": {
+            "_exists": true,
+            "chat": {
+              "-Oje3gsz7cVofR-uiYmW": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "hello",
+                "ts": 1769158660035
+              },
+              "-Oje3l2564qbDXqnpNlt": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "hhjsj",
+                "ts": 1769158677080
+              },
+              "-Oje3mKzxYp1YH08AAZE": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "isiwi",
+                "ts": 1769158682356
+              },
+              "-Oje3q1wP4bY42yg6F8x": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "idkdk",
+                "ts": 1769158697530
+              },
+              "-Oje3uYlPcvT3DSXCdtn": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "kwkdb",
+                "ts": 1769158716039
+              },
+              "-Oje3wKfYkFS5aE8bKg2": {
+                "senderRole": "client",
+                "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+                "text": "iwiwiw",
+                "ts": 1769158723331
+              }
+            },
+            "files": {
+              "-Oje3FUTfBIvZev7ZN85": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Oje0YGXepeD9cmtJqYW%2FPolice_Clearance%2F-Oje3FUTfBIvZev7ZN85.jpg?alt=media&token=75c174d3-c3ba-467c-9eb1-eedd388489aa",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-Oje0YGXepeD9cmtJqYW/Police_Clearance/-Oje3FUTfBIvZev7ZN85.jpg",
+                "uploadedAt": 1769158558912
+              }
+            }
+          },
+          "Sanitary Permit": {
+            "_exists": true,
+            "files": {
+              "-Oje3SN8biLrU3I8YqDQ": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-Oje0YGXepeD9cmtJqYW%2FSanitary_Permit%2F-Oje3SN8biLrU3I8YqDQ.jpg?alt=media&token=66717646-7338-4d95-b984-c7d095e55cd0",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-Oje0YGXepeD9cmtJqYW/Sanitary_Permit/-Oje3SN8biLrU3I8YqDQ.jpg",
+                "uploadedAt": 1769158618109
+              }
+            }
+          }
+        }
+      },
+      "-OjeUB6WXVKFJR7beIFU": {
+        "fees": {
+          "breakdown": {
+            "DST": 90,
+            "Mayor's Permit (Activity 1: Mini Grocery • Cottage)": 3000,
+            "Mayor's Permit (Total)": 3000,
+            "Mayor’s Clearance & Certification": 200,
+            "Sanitary Permit": 100,
+            "Subscription Fee": 100,
+            "Weights & Measures": 100
+          },
+          "computedAt": 1769165750787,
+          "inputs": {
+            "applicationType": "New",
+            "autoTobacco1500AppliedTo": [
+              "Grocery",
+              "Mini Grocery"
+            ],
+            "businessType": "Single",
+            "clearanceCertification": 200,
+            "grossTotal": 0,
+            "hasRetailStore": true,
+            "taxApplied": false
+          },
+          "rulesVersion": "v4-2026-01-retail-brackets-clearance200-autotobacco1500-no-vape",
+          "total": 3590
+        },
+        "form": {
+          "activities": [
+            {
+              "capitalization": "60000",
+              "grossSales": "",
+              "lineOfBusiness": "Mini Grocery",
+              "sellsAlcohol": true,
+              "sellsLpg": true,
+              "sellsTobacco": true,
+              "tricycleUnits": ""
+            }
+          ],
+          "applicationType": "New",
+          "businessAddress": "Camatagan,Sabangan, Moutain Province, Sabangan, Mountain Province",
+          "businessEmail": "wizassasinmontelli@gmail.com",
+          "businessMobile": "0949-694-0616",
+          "businessName": "Sabangan",
+          "businessPostalCode": "2622",
+          "businessType": "Single",
+          "dateOfApplication": "2026-01-23",
+          "emergencyContactMobile": "0946-454-8464",
+          "emergencyContactName": "hsjwj",
+          "firstName": "Tamad",
+          "incentiveEntity": "",
+          "lastName": "Juan",
+          "lessorName": "",
+          "middleName": "yam",
+          "ownerAddress": "Camatagan,Sabangan, Moutain Province, Sabangan, Mountain Province",
+          "ownerEmail": "wizassasinmontelli@gmail.com",
+          "ownerMobile": "0949-694-0616",
+          "ownerPostalCode": "2622",
+          "paymentMode": "Annually",
+          "placeRented": false,
+          "registrationDate": "2026-01-23",
+          "registrationNo": "7272727",
+          "taxIncentive": "No",
+          "tin": "6382828",
+          "totalEmployees": "0",
+          "totalFemaleEmployees": "0",
+          "tradeName": ""
+        },
+        "meta": {
+          "applicantName": "Tamad Juan",
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "applicationType": "New",
+          "businessName": "Sabangan",
+          "businessType": "Single",
+          "createdAt": 1769165603768,
+          "feeEstimateTotal": 3590,
+          "feesComputedAt": 1769165751660,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_review",
+          "paymentMode": "Annually",
+          "status": "submitted",
+          "updatedAt": 1769165751660
+        },
+        "requirements": {
+          "Barangay Clearance": {
+            "_exists": true,
+            "files": {
+              "-OjeUTTbQ7fw_gzwkNEI": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjeUB6WXVKFJR7beIFU%2FBarangay_Clearance%2F-OjeUTTbQ7fw_gzwkNEI.jpg?alt=media&token=513ba6f2-afe3-4448-8f51-401d270d6ef5",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-OjeUB6WXVKFJR7beIFU/Barangay_Clearance/-OjeUTTbQ7fw_gzwkNEI.jpg",
+                "uploadedAt": 1769165685028
+              }
+            }
+          },
+          "DTI": {
+            "_exists": true,
+            "files": {
+              "-OjeUY7gTC_jmY20dLf2": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjeUB6WXVKFJR7beIFU%2FDTI%2F-OjeUY7gTC_jmY20dLf2.jpg?alt=media&token=c898fb9e-b6ce-40df-a8c8-9a8d61b30efb",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-OjeUB6WXVKFJR7beIFU/DTI/-OjeUY7gTC_jmY20dLf2.jpg",
+                "uploadedAt": 1769165703653
+              }
+            }
+          },
+          "Fire Safety Certificate": {
+            "_exists": true,
+            "files": {
+              "-OjeUV-Zi9T8ttnYPcE2": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjeUB6WXVKFJR7beIFU%2FFire_Safety_Certificate%2F-OjeUV-Zi9T8ttnYPcE2.jpg?alt=media&token=5ddcdbc7-b1a3-4825-ae35-4fe69980718a",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-OjeUB6WXVKFJR7beIFU/Fire_Safety_Certificate/-OjeUV-Zi9T8ttnYPcE2.jpg",
+                "uploadedAt": 1769165691876
+              }
+            }
+          },
+          "Police Clearance": {
+            "_exists": true,
+            "files": {
+              "-OjeURmnLmVcj_KSqwXv": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjeUB6WXVKFJR7beIFU%2FPolice_Clearance%2F-OjeURmnLmVcj_KSqwXv.jpg?alt=media&token=f232334a-8745-4987-98ae-d4fe805f6281",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-OjeUB6WXVKFJR7beIFU/Police_Clearance/-OjeURmnLmVcj_KSqwXv.jpg",
+                "uploadedAt": 1769165678780
+              }
+            }
+          },
+          "Sanitary Permit": {
+            "_exists": true,
+            "files": {
+              "-OjeUWf375f-407moqDu": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OjeUB6WXVKFJR7beIFU%2FSanitary_Permit%2F-OjeUWf375f-407moqDu.jpg?alt=media&token=7e6adeab-e5a3-423b-a812-274f02d99b86",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-OjeUB6WXVKFJR7beIFU/Sanitary_Permit/-OjeUWf375f-407moqDu.jpg",
+                "uploadedAt": 1769165697872
+              }
+            }
+          }
+        }
+      },
+      "-OjeUuPBgyvj0tXCG0Y8": {
+        "draftFees": {
+          "breakdown": {
+            "DST": 90,
+            "Mayor's Permit (Activity 1: Mini Grocery • Cottage)": 3000,
+            "Mayor's Permit (Total)": 3000,
+            "Mayor’s Clearance & Certification": 200,
+            "Sanitary Permit": 100,
+            "Subscription Fee": 100,
+            "Weights & Measures": 100
+          },
+          "computedAt": 1769165793366,
+          "inputs": {
+            "applicationType": "New",
+            "autoTobacco1500AppliedTo": [
+              "Grocery",
+              "Mini Grocery"
+            ],
+            "businessType": "Single",
+            "clearanceCertification": 200,
+            "grossTotal": 0,
+            "hasRetailStore": true,
+            "taxApplied": false
+          },
+          "rulesVersion": "v4-2026-01-retail-brackets-clearance200-autotobacco1500-no-vape",
+          "total": 3590
+        },
+        "draftForm": {
+          "activities": [
+            {
+              "capitalization": "60000",
+              "grossSales": "",
+              "lineOfBusiness": "Mini Grocery",
+              "sellsAlcohol": true,
+              "sellsLpg": true,
+              "sellsTobacco": true,
+              "tricycleUnits": ""
+            }
+          ],
+          "applicationType": "New",
+          "businessAddress": "Camatagan,Sabangan, Moutain Province, Sabangan, Mountain Province",
+          "businessEmail": "wizassasinmontelli@gmail.com",
+          "businessMobile": "0949-694-0616",
+          "businessName": "Sabangan",
+          "businessPostalCode": "2622",
+          "businessType": "Single",
+          "dateOfApplication": "2026-01-23",
+          "emergencyContactMobile": "0946-454-8464",
+          "emergencyContactName": "hsjwj",
+          "firstName": "Tamad",
+          "incentiveEntity": "",
+          "lastName": "Juan",
+          "lessorName": "",
+          "middleName": "yam",
+          "ownerAddress": "Camatagan,Sabangan, Moutain Province, Sabangan, Mountain Province",
+          "ownerEmail": "wizassasinmontelli@gmail.com",
+          "ownerMobile": "0949-694-0616",
+          "ownerPostalCode": "2622",
+          "paymentMode": "Annually",
+          "placeRented": false,
+          "registrationDate": "2026-01-23",
+          "registrationNo": "7272727",
+          "taxIncentive": "No",
+          "tin": "6382828",
+          "totalEmployees": "0",
+          "totalFemaleEmployees": "0",
+          "tradeName": ""
+        },
+        "meta": {
+          "applicantName": "Tamad Juan",
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "applicationType": "New",
+          "businessName": "Sabangan",
+          "businessType": "Single",
+          "createdAt": 1769165793366,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "paymentMode": "Annually",
+          "status": "draft",
+          "updatedAt": 1769165793366
+        }
+      }
+    },
+    "posts": {
+      "post_1000": {
+        "category": "Event",
+        "content": "The Municipality of Sabangan invites everyone to participate in Gagayam 2025. Activities include cultural performances, community programs, and featured events throughout the day. Please stay updated for the official schedule and announcements.",
+        "createdBy": {
+          "adminId": "admin_001",
+          "name": "LGU Admin Panel"
+        },
+        "dateUploaded": "2026-01-11T09:00:00+08:00",
+        "highlight": "Join us for Gagayam 2025 — a celebration of culture, unity, and community spirit in Sabangan.",
+        "location": "Sabangan, Mountain Province",
+        "status": "published",
+        "storage": {
+          "basePath": "Post/2026/January 11/post_1000",
+          "coverPath": "Post/2026/January 11/post_1000/cover/cover.jpg",
+          "imagePaths": [
+            "Post/2026/January 11/post_1000/images (1).jfif",
+            "Post/2026/January 11/post_1000/images (2).jfif"
+          ]
+        },
+        "title": "GAGAYAM 2025"
+      }
+    }
+  },
+  "lgu_sabangan_status": {
+    "statusBoard": {
+      "featuredEvent": {
+        "bannerUrl": "https://www.freepik.com/vectors/banner-poster",
+        "category": "festival",
+        "date": "2026-01-14",
+        "details": "Please stay updated for the official schedule and announcements.",
+        "enabled": true,
+        "location": "Sabangan, Mountain Province",
+        "subtitle": "Cultural performances • Community programs • Featured events",
+        "time": "Whole day",
+        "title": "GAGAYAM 2025",
+        "updatedAt": 1768553768829,
+        "updatedBy": "christiankingaw69@gmail.com"
+      },
+      "mayor": {
+        "availability": "available",
+        "expectedBack": "1/17/2026",
+        "note": "Mayor is on vacation."
+      },
+      "municipality": {
+        "isOpen": true,
+        "lastUpdatedAt": 1768886739824,
+        "lastUpdatedBy": "christiankingaw69@gmail.com",
+        "officeHours": "8:00 AM - 5:00 PM",
+        "publicNote": "Open today. Please bring valid ID and follow LGU guidelines."
+      },
+      "upcomingEvents": {
+        "evt_001": {
+          "category": "celebration",
+          "date": "2026-02-01",
+          "details": "Program, parade, and cultural presentations.",
+          "location": "Municipal Hall / Plaza",
+          "time": "All day",
+          "title": "Sabangan Day"
+        }
+      }
+    }
+  },
+  "users": {
+    "mobileApp": {
+      "GRPoFMzBM8TOr4udKrFV1I8YrWu1": {
+        "address": {
+          "municipality": "Sabangan",
+          "province": "Mountain Province",
+          "street": "Camatagan, Sabangan, Mountain Province",
+          "zipCode": "2622"
+        },
+        "createdAt": 1768385791867,
+        "email": "shadracksubilla@gmail.com",
+        "emailLower": "shadracksubilla@gmail.com",
+        "emailVerified": true,
+        "firstName": "Shadrack",
+        "lastLoginAt": 1768525127936,
+        "lastName": "Subilla",
+        "middleName": "B.",
+        "number": "+639496940616",
+        "role": "user",
+        "status": "active",
+        "uid": "GRPoFMzBM8TOr4udKrFV1I8YrWu1"
+      },
+      "vFFN4wHnYKOVY28N6Xxe1IDXTnH3": {
+        "address": {
+          "municipality": "Sabangan",
+          "province": "Mountain Province",
+          "street": "Camatagan,Sabangan, Moutain Province",
+          "zipCode": "2622"
+        },
+        "createdAt": 1768385899331,
+        "email": "wizassasinmontelli@gmail.com",
+        "emailLower": "wizassasinmontelli@gmail.com",
+        "emailVerified": true,
+        "firstName": "Bus",
+        "lastLoginAt": 1769153692836,
+        "lastName": "Das",
+        "middleName": "Yam",
+        "number": "+639496940616",
+        "role": "user",
+        "status": "active",
+        "uid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3"
+      }
+    },
+    "webapp": {
+      "-OiuPUGFvq7X7Msyd6UY": {
+        "createdAt": 1768359064765,
+        "email": "christiankingaw69@gmail.com",
+        "emailVerified": true,
+        "firstName": "Christian",
+        "lastName": "Kingaw",
+        "middleName": "Galsi",
+        "passwordHash": "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"
+      }
+    }
+  }
+}
