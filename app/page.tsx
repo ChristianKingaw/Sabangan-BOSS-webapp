@@ -1916,7 +1916,7 @@ export default function HomePage() {
                   >
                     Print
                   </Button>
-                  <Button variant="outline" onClick={handleCloseDocxPreview}>
+                  <Button variant="outline" onClicweb-appk={handleCloseDocxPreview}>
                     Close
                   </Button>
                 </div>
@@ -1986,16 +1986,16 @@ export default function HomePage() {
     <div className="min-h-screen bg-background flex flex-col">
       <Header tall={currentPage === "login"} />
 
-      <main className="flex-1 flex items-center justify-center px-4 bg-gradient-to-br from-green-50 to-white">
-        <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
-          <div className="hidden md:flex flex-col items-start justify-center px-6">
-            <div className="bg-card border border-border rounded-xl p-4 shadow-md">
-              <Image src="/images/sabangan-lgu-building.png" alt="Sabangan Seal" width={320} height={320} className="object-cover max-w-full" />
+      <main className="flex-1 flex items-center justify-center px-4 bg-gradient-to-br from-orange-50 to-white">
+        <div className="w-full max-w-5xl grid grid-cols-1 md:[grid-template-columns:2fr_1fr] gap-0 items-stretch">
+          <div className="hidden md:flex items-stretch">
+            <div className="bg-card border border-border border-r-0 rounded-l-xl p-0 shadow-md flex items-center justify-center md:h-[440px] w-full overflow-hidden">
+              <Image src="/images/sabangan-lgu-building.png" alt="Sabangan Seal" width={520} height={520} className="object-cover w-full h-full rounded-l-xl transform scale-110" />
             </div>
           </div>
 
           <div className="w-full flex items-center justify-center">
-            <div className="w-full max-w-md bg-card border border-border rounded-xl p-8 shadow-md text-left">
+            <div className="w-full max-w-md md:max-w-none bg-card border border-border border-l-0 rounded-r-xl p-8 shadow-md text-left md:h-[440px]">
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center">
                   <LogIn className="h-6 w-6 text-white" />
