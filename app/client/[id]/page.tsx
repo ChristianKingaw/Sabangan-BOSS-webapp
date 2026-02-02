@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, Suspense, useEffect, useCallback, useMemo } from "react"
+import { useState, Suspense, useEffect, useCallback, useMemo, useRef } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import {
   ArrowLeft,
@@ -75,6 +75,7 @@ function ClientRequirementsContent() {
   const [isDocxModalOpen, setIsDocxModalOpen] = useState(false)
   const [isDocxLoading, setIsDocxLoading] = useState(false)
   const [docxPdfUrl, setDocxPdfUrl] = useState<string | null>(null)
+  const docxPreviewCancelRef = useRef(false)
 
   // Wait for Firebase Auth to be ready
   useEffect(() => {
@@ -220,6 +221,7 @@ function ClientRequirementsContent() {
     }
 
     try {
+      docxPreviewCancelRef.current = false
       setIsDocxModalOpen(true)
       setIsDocxLoading(true)
       setDocxContent(null)
@@ -241,8 +243,12 @@ function ClientRequirementsContent() {
           if (resp.ok) {
             const blob = await resp.blob()
             const url = URL.createObjectURL(blob)
-            setDocxPdfUrl(url)
-            setIsDocxLoading(false)
+            if (!docxPreviewCancelRef.current) {
+              setDocxPdfUrl(url)
+              setIsDocxLoading(false)
+            } else {
+              try { URL.revokeObjectURL(url) } catch {}
+            }
             return
           }
           // If server returned non-ok, check for soffice/ENOENT details and notify
@@ -263,20 +269,29 @@ function ClientRequirementsContent() {
         throw new Error(`Failed to fetch document: ${response.statusText}`)
       }
 
+      if (docxPreviewCancelRef.current) {
+        return
+      }
+
       const blob = await response.blob()
       const container = document.createElement("div")
       await renderAsync(blob, container)
-      setDocxContent(container.innerHTML)
+      if (!docxPreviewCancelRef.current) {
+        setDocxContent(container.innerHTML)
+      }
     } catch (error) {
       console.error("Failed to preview DOCX", error)
       toast.error("Unable to preview the document. Please try downloading instead.")
       setIsDocxModalOpen(false)
     } finally {
-      setIsDocxLoading(false)
+      if (!docxPreviewCancelRef.current) {
+        setIsDocxLoading(false)
+      }
     }
   }, [activeDocument])
 
   const handleCloseDocxModal = () => {
+    docxPreviewCancelRef.current = true
     setIsDocxModalOpen(false)
     if (docxPdfUrl) {
       try { URL.revokeObjectURL(docxPdfUrl) } catch {}
