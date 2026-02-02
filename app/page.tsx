@@ -374,6 +374,83 @@ export default function HomePage() {
   const [docxPreviewLoading, setDocxPreviewLoading] = useState(false)
   const [docxPreviewTitle, setDocxPreviewTitle] = useState("Application Form Preview")
   const [docxPreviewError, setDocxPreviewError] = useState<string | null>(null)
+  const docxPreviewCancelRef = useRef(false)
+  const docxPreviewAbortRef = useRef<AbortController | null>(null)
+  const [docxPreviewClientId, setDocxPreviewClientId] = useState<string | null>(null)
+
+  type DocxPreviewCacheEntry = {
+    signature: string | null
+    pdfUrl: string | null
+    mergedUrl: string | null
+    tempUrls: string[]
+  }
+
+  const docxPreviewCacheRef = useRef<Map<string, DocxPreviewCacheEntry>>(new Map())
+
+  const isAbortError = (err: unknown) => {
+    const name = (err as any)?.name
+    return name === "AbortError"
+  }
+
+  const revokeUrlSafe = (url: string | null | undefined) => {
+    if (!url) return
+    try { URL.revokeObjectURL(url) } catch {}
+  }
+
+  const buildDocxPreviewSignature = (record?: BusinessApplicationRecord | null) => {
+    if (!record) return null
+    try {
+      const requirements = (record.requirements || []).map((req) => ({
+        id: req.id,
+        name: req.name,
+        files: (req.files || []).map((f) => ({
+          id: f.id,
+          status: f.status ?? null,
+          uploadedAt: f.uploadedAt ?? null,
+          fileHash: f.fileHash ?? null,
+          fileSize: f.fileSize ?? null,
+          downloadUrl: f.downloadUrl ?? null,
+        })),
+      }))
+
+      return JSON.stringify({
+        id: record.id,
+        status: record.status ?? null,
+        overallStatus: record.overallStatus ?? null,
+        applicationDate: record.applicationDate ?? null,
+        updatedAt: (record as any)?.updatedAt ?? null,
+        requirements,
+      })
+    } catch {
+      return String(record.id || "")
+    }
+  }
+
+  const cacheDocxPreview = (clientId: string, signature: string | null, entry: Partial<DocxPreviewCacheEntry>) => {
+    const existing = docxPreviewCacheRef.current.get(clientId)
+    if (existing && existing.signature !== signature) {
+      revokeUrlSafe(existing.pdfUrl)
+      revokeUrlSafe(existing.mergedUrl)
+      existing.tempUrls?.forEach((u) => revokeUrlSafe(u))
+    }
+
+    const next: DocxPreviewCacheEntry = {
+      signature,
+      pdfUrl: entry.pdfUrl ?? existing?.pdfUrl ?? null,
+      mergedUrl: entry.mergedUrl ?? existing?.mergedUrl ?? null,
+      tempUrls: entry.tempUrls ?? existing?.tempUrls ?? [],
+    }
+
+    docxPreviewCacheRef.current.set(clientId, next)
+  }
+
+  const getDocxPreviewCache = (clientId: string, signature: string | null) => {
+    const cached = docxPreviewCacheRef.current.get(clientId)
+    if (cached && cached.signature === signature) {
+      return cached
+    }
+    return null
+  }
 
   const [latestClientTsMap, setLatestClientTsMap] = useState<Record<string, number>>({})
   const [messengerLastReadMap, setMessengerLastReadMap] = useState<Record<string, number>>({})
@@ -469,6 +546,8 @@ export default function HomePage() {
       // non-fatal
     }
   }, [])
+
+  const hasFetchedInitialLatestClientTs = useRef(false)
 
   const handleOpenMessenger = useCallback(() => {
     setIsMessengerOpen(true)
@@ -737,6 +816,34 @@ export default function HomePage() {
     setIsMessengerLastReadLoaded(true)
   }, [])
 
+  // Ensure latest client message timestamps are loaded on initial home render
+  useEffect(() => {
+    if (!isLoggedIn) {
+      hasFetchedInitialLatestClientTs.current = false
+      return
+    }
+    if (hasFetchedInitialLatestClientTs.current) return
+    hasFetchedInitialLatestClientTs.current = true
+    ;(async () => {
+      try {
+        await refreshLatestClientTs()
+      } catch {
+        // allow a retry on next login state change
+        hasFetchedInitialLatestClientTs.current = false
+      }
+    })()
+  }, [isLoggedIn, refreshLatestClientTs])
+
+  // Periodically refresh latest client message timestamps as a fallback
+  // in case realtime listeners miss updates due to network/auth hiccups.
+  useEffect(() => {
+    if (!isLoggedIn) return
+    const interval = setInterval(() => {
+      refreshLatestClientTs().catch(() => {})
+    }, 15000)
+    return () => clearInterval(interval)
+  }, [isLoggedIn, refreshLatestClientTs])
+
   // Load saved Mayor's Clearance files list
   useEffect(() => {
     if (!isLoggedIn) {
@@ -872,10 +979,14 @@ export default function HomePage() {
   }, [])
 
   // Subscribe to application messages in realtime and keep the latest
-  // client message timestamps up to date. This runs regardless of
-  // authentication so the Messages dot reflects incoming client messages
-  // even when the staff user hasn't opened the messenger or is logged out.
+  // client message timestamps up to date. Re-subscribe on auth changes
+  // to ensure permissions allow reads when rules require authentication.
   useEffect(() => {
+    if (!isLoggedIn) {
+      setLatestClientTsMap({})
+      return
+    }
+
     const businessRef = ref(realtimeDb, BUSINESS_APPLICATION_PATH)
     const unsub = onValue(businessRef, (snapshot) => {
       const node = snapshot.val() || {}
@@ -896,7 +1007,7 @@ export default function HomePage() {
       try { if (typeof unsub === 'function') unsub() } catch {}
       try { off(businessRef) } catch {}
     }
-  }, [])
+  }, [isLoggedIn])
 
   
 
@@ -977,20 +1088,23 @@ export default function HomePage() {
   }
 
   const handleCloseDocxPreview = () => {
+    const cached = docxPreviewClientId ? docxPreviewCacheRef.current.get(docxPreviewClientId) : null
+    const isCachedPdf = cached?.pdfUrl && cached.pdfUrl === docxPreviewPdfUrl
+    const isCachedMerged = cached?.mergedUrl && cached.mergedUrl === docxPreviewMergedPdfUrl
+    const cachedTempSet = new Set(cached?.tempUrls || [])
+
+    docxPreviewAbortRef.current?.abort()
+    docxPreviewAbortRef.current = null
+    docxPreviewCancelRef.current = true
     setIsDocxPreviewOpen(false)
-    if (docxPreviewPdfUrl) {
-      try { URL.revokeObjectURL(docxPreviewPdfUrl) } catch {}
-    }
-    if (docxPreviewSwornPdfUrl) {
-      try { URL.revokeObjectURL(docxPreviewSwornPdfUrl) } catch {}
-    }
-    if (docxPreviewMergedPdfUrl) {
-      try { URL.revokeObjectURL(docxPreviewMergedPdfUrl) } catch {}
-    }
+    if (!isCachedPdf) revokeUrlSafe(docxPreviewPdfUrl)
+    revokeUrlSafe(docxPreviewSwornPdfUrl)
+    if (!isCachedMerged) revokeUrlSafe(docxPreviewMergedPdfUrl)
     if (docxPreviewTempUrls && docxPreviewTempUrls.length > 0) {
       try {
         docxPreviewTempUrls.forEach((u) => {
-          try { URL.revokeObjectURL(u) } catch {}
+          if (cachedTempSet.has(u)) return
+          revokeUrlSafe(u)
         })
       } catch {}
     }
@@ -1000,6 +1114,7 @@ export default function HomePage() {
     setDocxPreviewSwornPdfUrl(null)
     setDocxPreviewError(null)
     setDocxPreviewLoading(false)
+    setDocxPreviewClientId(null)
   }
 
   // Merge main + sworn PDFs into a single Blob URL for combined preview/print
@@ -1070,6 +1185,12 @@ export default function HomePage() {
   const handlePrintApplicationForm = async (clientId: string, event?: React.MouseEvent) => {
     event?.stopPropagation()
 
+    docxPreviewCancelRef.current = false
+    docxPreviewAbortRef.current?.abort()
+    const abortController = new AbortController()
+    docxPreviewAbortRef.current = abortController
+    setDocxPreviewClientId(clientId)
+
     const clientRecord = clients.find((client) => client.id === clientId)
     const titleParts = [clientRecord?.applicantName, clientRecord?.businessName].filter(Boolean)
     setDocxPreviewTitle(titleParts.length > 0 ? `${titleParts.join(" - ")} Application Form` : "Application Form Preview")
@@ -1077,6 +1198,18 @@ export default function HomePage() {
     setDocxPreviewError(null)
     setIsDocxPreviewOpen(true)
     setDocxPreviewLoading(true)
+
+    const previewSignature = buildDocxPreviewSignature(clientRecord)
+    const cached = getDocxPreviewCache(clientId, previewSignature)
+    if (cached) {
+      setDocxPreviewPdfUrl(cached.pdfUrl)
+      setDocxPreviewMergedPdfUrl(cached.mergedUrl)
+      setDocxPreviewTempUrls(cached.tempUrls)
+      setDocxPreviewSwornHtml(null)
+      setDocxPreviewSwornPdfUrl(null)
+      setDocxPreviewLoading(false)
+      return
+    }
 
     try {
       const currentUser = firebaseAuth.currentUser
@@ -1096,6 +1229,7 @@ export default function HomePage() {
             Authorization: `Bearer ${idToken}`,
           },
           body: JSON.stringify({ applicationId: clientId }),
+          signal: abortController.signal,
         })
         return resp
       }
@@ -1103,13 +1237,21 @@ export default function HomePage() {
       let usedServerPdf = false
       try {
         const mainResp = await tryServerPdf()
+        if (docxPreviewCancelRef.current) {
+          return
+        }
           if (mainResp.ok) {
             const mainBlob = await mainResp.blob()
             const mainUrl = URL.createObjectURL(mainBlob)
+            if (docxPreviewCancelRef.current) {
+              try { URL.revokeObjectURL(mainUrl) } catch {}
+              return
+            }
             setDocxPreviewPdfUrl(mainUrl)
             setDocxPreviewHtml(null)
             setDocxPreviewSwornHtml(null)
             setDocxPreviewSwornPdfUrl(null)
+            cacheDocxPreview(clientId, previewSignature, { pdfUrl: mainUrl })
             usedServerPdf = true
 
             // Also include any approved requirement PDFs in the preview (merge them)
@@ -1128,7 +1270,10 @@ export default function HomePage() {
                       if (!url) continue
 
                       const proxy = `/api/proxy?url=${encodeURIComponent(url)}`
-                      const resp = await fetch(proxy)
+                      const resp = await fetch(proxy, { signal: abortController.signal })
+                      if (docxPreviewCancelRef.current) {
+                        return
+                      }
                       if (!resp.ok) continue
                       const blob = await resp.blob()
                       const contentType = (blob.type || "").toLowerCase()
@@ -1144,11 +1289,32 @@ export default function HomePage() {
                           const arrayBuffer = await blob.arrayBuffer()
                           const pdfDoc = await PDFDocument.create()
                           let embedded: any
-                          if (contentType === "image/jpeg" || contentType === "image/jpg") {
-                            embedded = await pdfDoc.embedJpg(new Uint8Array(arrayBuffer))
-                          } else {
-                            embedded = await pdfDoc.embedPng(new Uint8Array(arrayBuffer))
+                          try {
+                            if (contentType === "image/jpeg" || contentType === "image/jpg") {
+                              embedded = await pdfDoc.embedJpg(new Uint8Array(arrayBuffer))
+                            } else {
+                              embedded = await pdfDoc.embedPng(new Uint8Array(arrayBuffer))
+                            }
+                          } catch (embedErr) {
+                            // fallback: some servers misreport content-type or image is in an unexpected format
+                            try {
+                              const imageBitmap = await createImageBitmap(blob)
+                              const canvas = document.createElement("canvas")
+                              canvas.width = imageBitmap.width
+                              canvas.height = imageBitmap.height
+                              const ctx = canvas.getContext("2d")
+                              if (!ctx) throw new Error("Canvas context unavailable")
+                              ctx.drawImage(imageBitmap, 0, 0)
+                              const pngBlob: Blob | null = await new Promise((res) => canvas.toBlob(res, "image/png"))
+                              if (!pngBlob) throw new Error("Failed to convert image to PNG blob")
+                              const pngArray = new Uint8Array(await pngBlob.arrayBuffer())
+                              embedded = await pdfDoc.embedPng(pngArray)
+                            } catch (fallbackErr) {
+                              console.warn("Failed to convert image requirement to PDF:", f, fallbackErr)
+                              continue
+                            }
                           }
+
                           const imgWidth = embedded.width || 600
                           const imgHeight = embedded.height || 800
                           const page = pdfDoc.addPage([imgWidth, imgHeight])
@@ -1181,14 +1347,38 @@ export default function HomePage() {
                     try { URL.revokeObjectURL(u) } catch {}
                   })
                 } catch {}
-                setDocxPreviewTempUrls(tempCreatedUrls)
+                if (!docxPreviewCancelRef.current) {
+                  setDocxPreviewTempUrls(tempCreatedUrls)
+                  cacheDocxPreview(clientId, previewSignature, { pdfUrl: mainUrl, tempUrls: tempCreatedUrls })
+                } else {
+                  tempCreatedUrls.forEach((u) => {
+                    try { URL.revokeObjectURL(u) } catch {}
+                  })
+                }
               }
 
               if (mergeCandidates.length > 1) {
                 try {
+                  if (docxPreviewCancelRef.current) {
+                    // Do not attempt merge when preview is cancelled
+                    mergeCandidates.forEach((u, idx) => {
+                      if (idx === 0) return
+                      try { URL.revokeObjectURL(u) } catch {}
+                    })
+                    return
+                  }
                   const mergedBlob = await mergePdfUrls(mergeCandidates)
                   const mergedUrl = URL.createObjectURL(mergedBlob)
-                  setDocxPreviewMergedPdfUrl(mergedUrl)
+                  if (docxPreviewCancelRef.current) {
+                    try { URL.revokeObjectURL(mergedUrl) } catch {}
+                    mergeCandidates.forEach((u, idx) => {
+                      if (idx === 0) return
+                      try { URL.revokeObjectURL(u) } catch {}
+                    })
+                  } else {
+                    setDocxPreviewMergedPdfUrl(mergedUrl)
+                    cacheDocxPreview(clientId, previewSignature, { pdfUrl: mainUrl, mergedUrl: mergedUrl, tempUrls: tempCreatedUrls })
+                  }
                 } catch (mergeErr) {
                   console.warn("Failed to merge approved requirement PDFs/images:", mergeErr)
                 }
@@ -1214,6 +1404,7 @@ export default function HomePage() {
           }
         }
       } catch (err) {
+        if (isAbortError(err)) return
         console.warn("Error requesting server PDF, will fall back to client rendering:", err)
       }
 
@@ -1227,6 +1418,7 @@ export default function HomePage() {
               Authorization: `Bearer ${idToken}`,
             },
             body: JSON.stringify({ applicationId: clientId }),
+            signal: abortController.signal,
           })
           if (!mainResp.ok) {
             const errorData = await mainResp.json().catch(() => ({}))
@@ -1238,21 +1430,40 @@ export default function HomePage() {
           const mainBlob = await mainResp.blob()
           const mainContainer = document.createElement("div")
           await renderAsync(mainBlob, mainContainer)
-          setDocxPreviewHtml(mainContainer.innerHTML)
-          setDocxPreviewSwornHtml(null)
+            if (!docxPreviewCancelRef.current) {
+              setDocxPreviewHtml(mainContainer.innerHTML)
+              setDocxPreviewSwornHtml(null)
+            }
             // Do not fetch sworn document during preview to avoid creating/duplicating sworn files.
         } catch (error) {
+          if (isAbortError(error)) return
           console.error("Error printing application form:", error)
           setDocxPreviewError("Unable to preview this document. Please try downloading instead.")
         }
       }
     } catch (error) {
-      console.error("Error printing application form:", error)
-      setDocxPreviewError("Unable to preview this document. Please try downloading instead.")
+      if (!isAbortError(error)) {
+        console.error("Error printing application form:", error)
+        setDocxPreviewError("Unable to preview this document. Please try downloading instead.")
+      }
     } finally {
-      setDocxPreviewLoading(false)
+      if (!docxPreviewCancelRef.current) {
+        setDocxPreviewLoading(false)
+      }
+      docxPreviewAbortRef.current = null
     }
   }
+
+  useEffect(() => {
+    return () => {
+      docxPreviewCacheRef.current.forEach((entry) => {
+        revokeUrlSafe(entry.pdfUrl)
+        revokeUrlSafe(entry.mergedUrl)
+        entry.tempUrls.forEach((u) => revokeUrlSafe(u))
+      })
+      docxPreviewCacheRef.current.clear()
+    }
+  }, [])
 
   const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
     const bytes = new Uint8Array(buffer)
@@ -1916,7 +2127,7 @@ export default function HomePage() {
                   >
                     Print
                   </Button>
-                  <Button variant="outline" onClicweb-appk={handleCloseDocxPreview}>
+                  <Button variant="outline" onClick={handleCloseDocxPreview}>
                     Close
                   </Button>
                 </div>
