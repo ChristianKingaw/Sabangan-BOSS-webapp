@@ -1,11 +1,13 @@
 import { ref, push, set, update, serverTimestamp, query as dbQuery, orderByChild, equalTo, get } from "firebase/database"
 import { realtimeDb } from "@/database/firebase"
 
-const DATABASE_NAMESPACE =
+const RAW_NAMESPACE =
   process.env.NEXT_PUBLIC_DATABASE_NAMESPACE ??
   process.env.NEXT_PUBLIC_FIREBASE_DATABASE_NAMESPACE ??
-  "business/users/webapp"
-const STAFF_COLLECTION = `${DATABASE_NAMESPACE}`
+  "users/webapp"
+const STAFF_COLLECTION = RAW_NAMESPACE.endsWith("/staff")
+  ? RAW_NAMESPACE
+  : `${RAW_NAMESPACE}/staff`
 
 export type StaffRecord = {
   id: string

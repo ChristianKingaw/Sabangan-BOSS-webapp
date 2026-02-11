@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react"
 import { realtimeDb } from "@/database/firebase"
 import { BUSINESS_APPLICATION_PATH, normalizeBusinessApplication } from "@/lib/business-applications"
+import { MAYORS_CLEARANCE_APPLICATION_PATH, normalizeClearanceApplicant, buildClearanceMessengerThreadId } from "@/lib/clearance-applications"
 import { ref, onValue, push, off } from "firebase/database"
 import { getAuth } from "firebase/auth"
 import { Button } from "@/components/ui/button"
@@ -20,6 +21,9 @@ type Msg = {
 
 type ApplicationItem = {
   id: string
+  applicationId: string
+  applicantUid?: string
+  source: "business" | "clearance"
   displayName: string
   hasChat: boolean
   chatFromJson?: Msg[]
@@ -27,6 +31,67 @@ type ApplicationItem = {
   businessName?: string
   lastMessageTs?: number
   lastClientMessageTs?: number
+}
+
+type ExtractedChat = {
+  messages: Msg[]
+  lastMessageTs?: number
+  lastClientMessageTs?: number
+}
+
+const CLEARANCE_DEFAULT_ISSUE = "Barangay Clearance"
+
+const formatMessageText = (
+  rawText: unknown,
+  options?: { requirementName?: string; defaultIssueLabel?: string }
+) => {
+  const text = (rawText ?? "").toString()
+  const label = options?.defaultIssueLabel ?? options?.requirementName
+  return label ? `Issue: ${label} - ${text}` : text
+}
+
+const extractChatMessages = (payload: any, options?: { defaultIssueLabel?: string }): ExtractedChat => {
+  const chatNode = (payload as any)?.chat ?? null
+  const appChats: Msg[] = chatNode
+    ? Object.entries(chatNode).map(([cid, c]) => ({
+        id: `app:${cid}`,
+        senderRole: (c as any)?.senderRole,
+        senderUid: (c as any)?.senderUid,
+        text: formatMessageText((c as any)?.text, { defaultIssueLabel: options?.defaultIssueLabel }),
+        ts: (c as any)?.ts,
+        inReplyTo: (c as any)?.inReplyTo ?? null,
+      }))
+    : []
+
+  const reqNode = (payload as any)?.requirements ?? null
+  const reqChats: Msg[] = reqNode
+    ? Object.entries(reqNode).flatMap(([reqName, reqData]) => {
+        const rChat = (reqData as any)?.chat ?? null
+        if (!rChat) return []
+        return Object.entries(rChat).map(([cid, c]) => ({
+          id: `req:${reqName}:${cid}`,
+          senderRole: (c as any)?.senderRole,
+          senderUid: (c as any)?.senderUid,
+          text: formatMessageText((c as any)?.text, {
+            requirementName: reqName,
+            defaultIssueLabel: options?.defaultIssueLabel,
+          }),
+          ts: (c as any)?.ts,
+          inReplyTo: (c as any)?.inReplyTo ?? null,
+        }))
+      })
+    : []
+
+  const combined = [...appChats, ...reqChats].sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0))
+  const clientTs = combined
+    .filter((c) => (c.senderRole ?? "").toString().toLowerCase() !== "admin" && typeof c.ts === "number")
+    .map((c) => c.ts as number)
+
+  return {
+    messages: combined,
+    lastMessageTs: combined.length > 0 ? Math.max(...combined.map((c) => c.ts ?? 0)) : undefined,
+    lastClientMessageTs: clientTs.length > 0 ? Math.max(...clientTs) : undefined,
+  }
 }
 
 export default function Messenger({
@@ -112,62 +177,132 @@ export default function Messenger({
     let mounted = true
 
     setApplications([])
-    const appsRef = ref(realtimeDb, BUSINESS_APPLICATION_PATH)
-    const handle = onValue(appsRef, (snap) => {
-      try {
-        const businessNode = snap.val() || {}
-        const list: ApplicationItem[] = Object.entries(businessNode).map(([id, payload]) => {
-          const normalized = normalizeBusinessApplication(id, payload)
-          const applicantName = normalized.applicantName ?? ""
 
-          const chatNode = (payload as any)?.chat ?? null
-          const appChats: Msg[] = chatNode
-            ? Object.entries(chatNode).map(([cid, c]) => ({ id: `app:${cid}`, senderRole: (c as any).senderRole, senderUid: (c as any).senderUid, text: (c as any).text, ts: (c as any).ts }))
-            : []
+    let businessList: ApplicationItem[] = []
+    let clearanceList: ApplicationItem[] = []
 
-          const reqNode = (payload as any)?.requirements ?? null
-          const hasRequirements = reqNode && Object.keys(reqNode).length > 0
-          const reqChats: Msg[] = reqNode
-            ? Object.entries(reqNode).flatMap(([reqName, reqData]) => {
-                const rChat = (reqData as any)?.chat ?? null
-                if (!rChat) return []
-                return Object.entries(rChat).map(([cid, c]) => ({ id: `req:${reqName}:${cid}`, senderRole: (c as any).senderRole, senderUid: (c as any).senderUid, text: `Issue: ${reqName} - ${(c as any).text}`, ts: (c as any).ts }))
-              })
-            : []
+    const mergeLists = () => {
+      if (!mounted) return
+      const merged = [...businessList, ...clearanceList].filter(
+        (a) => a.hasChat && a.applicantName !== "Unnamed Applicant"
+      )
+      setApplications(merged)
+    }
 
-          const combined = [...appChats, ...reqChats].sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0))
-          const chatFromJson: Msg[] | undefined = combined.length > 0 ? combined : undefined
+    const buildBusinessList = (businessNode: Record<string, any>): ApplicationItem[] => {
+      return Object.entries(businessNode).map(([id, payload]) => {
+        const normalized = normalizeBusinessApplication(id, payload)
+        const applicantName = normalized.applicantName ?? ""
+        const extracted = extractChatMessages(payload)
+        const chatFromJson = extracted.messages.length > 0 ? extracted.messages : undefined
+        const reqNode = (payload as any)?.requirements ?? null
+        const hasRequirements = reqNode && Object.keys(reqNode).length > 0
 
-          // Include application if it has any requirement nodes (even without chat) or has chat messages
-          const lastTs = combined.length > 0 ? Math.max(...combined.map(c => (c.ts ?? 0))) : undefined
-          const clientTs = combined
-            .filter((c) => (c.senderRole ?? "").toString().toLowerCase() !== "admin" && typeof c.ts === "number")
-            .map((c) => c.ts as number)
-          const lastClientTs = clientTs.length > 0 ? Math.max(...clientTs) : undefined
+        return {
+          id,
+          applicationId: id,
+          source: "business",
+          displayName:
+            applicantName === "Unnamed Applicant"
+              ? normalized.businessName || id
+              : applicantName || normalized.businessName || id,
+          hasChat: !!chatFromJson || !!hasRequirements,
+          chatFromJson,
+          applicantName,
+          businessName: normalized.businessName,
+          lastMessageTs: extracted.lastMessageTs,
+          lastClientMessageTs: extracted.lastClientMessageTs,
+        }
+      })
+    }
 
-          return {
-            id,
-            displayName: applicantName === "Unnamed Applicant" ? (normalized.businessName || id) : (applicantName || normalized.businessName || id),
-            hasChat: !!chatFromJson || !!hasRequirements,
-            chatFromJson,
-            applicantName,
-            businessName: normalized.businessName,
-            lastMessageTs: lastTs,
-            lastClientMessageTs: lastClientTs,
+    const buildClearanceList = (clearanceNode: Record<string, any>): ApplicationItem[] => {
+      const rows: ApplicationItem[] = []
+
+      Object.entries(clearanceNode).forEach(([applicantUid, applications]) => {
+        if (!applications || typeof applications !== "object") {
+          return
+        }
+
+        Object.entries(applications).forEach(([applicationId, payload]) => {
+          if (!payload || typeof payload !== "object") {
+            return
           }
-        }).filter(a => a.hasChat && a.applicantName !== "Unnamed Applicant")
 
-        if (mounted) setApplications(list)
-      } catch (e) {
-        console.warn('Failed to load business data from DB', e)
-        if (mounted) setApplications([])
+          const normalizedPayload = {
+            ...payload,
+            meta: { applicantUid, ...(payload.meta ?? {}) },
+          }
+
+          const normalized = normalizeClearanceApplicant(applicationId, normalizedPayload)
+          const extracted = extractChatMessages(payload, { defaultIssueLabel: CLEARANCE_DEFAULT_ISSUE })
+          if (extracted.messages.length === 0) {
+            return
+          }
+
+          rows.push({
+            id: buildClearanceMessengerThreadId(applicantUid, applicationId),
+            applicationId,
+            applicantUid,
+            source: "clearance",
+            displayName: normalized.applicantName || normalized.form?.fullName || applicationId,
+            hasChat: true,
+            chatFromJson: extracted.messages,
+            applicantName: normalized.applicantName,
+            businessName: normalized.purpose || "Mayor's Clearance",
+            lastMessageTs: extracted.lastMessageTs,
+            lastClientMessageTs: extracted.lastClientMessageTs,
+          })
+        })
+      })
+
+      return rows
+    }
+
+    const appsRef = ref(realtimeDb, BUSINESS_APPLICATION_PATH)
+    const businessHandle = onValue(
+      appsRef,
+      (snap) => {
+        try {
+          const businessNode = snap.val() || {}
+          businessList = buildBusinessList(businessNode)
+        } catch (e) {
+          console.warn("Failed to load business data from DB", e)
+          businessList = []
+        }
+        mergeLists()
       }
-    })
+    )
+
+    const clearanceRef = ref(realtimeDb, MAYORS_CLEARANCE_APPLICATION_PATH)
+    const clearanceHandle = onValue(
+      clearanceRef,
+      (snap) => {
+        try {
+          const clearanceNode = snap.val() || {}
+          clearanceList = buildClearanceList(clearanceNode)
+        } catch (e) {
+          console.warn("Failed to load Mayor's Clearance data from DB", e)
+          clearanceList = []
+        }
+        mergeLists()
+      }
+    )
 
     return () => {
       mounted = false
-      try { off(appsRef) } catch {}
-      try { if (typeof handle === 'function') handle() } catch {}
+      try {
+        off(appsRef)
+      } catch {}
+      try {
+        off(clearanceRef)
+      } catch {}
+      try {
+        if (typeof businessHandle === "function") businessHandle()
+      } catch {}
+      try {
+        if (typeof clearanceHandle === "function") clearanceHandle()
+      } catch {}
     }
   }, [])
 
@@ -175,28 +310,58 @@ export default function Messenger({
   useEffect(() => {
     if (!selectedAppId) return
 
+    const app = applications.find((a) => a.id === selectedAppId)
+    if (!app) return
+    if (app.source === "clearance" && !app.applicantUid) {
+      console.warn("Missing applicant UID for mayor's clearance conversation", app)
+      return
+    }
+
+    const basePath =
+      app.source === "clearance"
+        ? `${MAYORS_CLEARANCE_APPLICATION_PATH}/${app.applicantUid}/${app.applicationId}`
+        : `${BUSINESS_APPLICATION_PATH}/${app.applicationId}`
+
+    const defaultIssueLabel = app.source === "clearance" ? CLEARANCE_DEFAULT_ISSUE : undefined
+
     // Always subscribe to realtime DB for both the main chat and requirement-level chats.
     // If the application also has chat data in the local JSON, we'll merge it with DB messages
     // and let DB messages take precedence.
     setMatchedAppId(selectedAppId)
     setMessages([])
 
-    const app = applications.find((a) => a.id === selectedAppId)
-    const jsonMsgs: Msg[] | undefined = app?.chatFromJson
+    const jsonMsgs: Msg[] | undefined = app.chatFromJson
 
     let mainData: any = {}
     let reqsData: any = {}
 
     const updateMessagesFromSources = () => {
       const dbMainList: Msg[] = mainData
-        ? Object.entries(mainData).map(([id, payload]) => ({ id: `app:${id}`, senderRole: (payload as any).senderRole, senderUid: (payload as any).senderUid, text: (payload as any).text, ts: (payload as any).ts, inReplyTo: (payload as any).inReplyTo ?? null }))
+        ? Object.entries(mainData).map(([id, payload]) => ({
+            id: `app:${id}`,
+            senderRole: (payload as any).senderRole,
+            senderUid: (payload as any).senderUid,
+            text: formatMessageText((payload as any).text, { defaultIssueLabel }),
+            ts: (payload as any).ts,
+            inReplyTo: (payload as any).inReplyTo ?? null,
+          }))
         : []
 
       const dbReqList: Msg[] = reqsData
         ? Object.entries(reqsData).flatMap(([reqName, reqNode]) => {
             const chatNode = (reqNode as any)?.chat ?? null
             if (!chatNode) return []
-            return Object.entries(chatNode).map(([cid, c]) => ({ id: `req:${reqName}:${cid}`, senderRole: (c as any).senderRole, senderUid: (c as any).senderUid, text: `Issue: ${reqName} - ${(c as any).text}`, ts: (c as any).ts, inReplyTo: (c as any).inReplyTo ?? null }))
+            return Object.entries(chatNode).map(([cid, c]) => ({
+              id: `req:${reqName}:${cid}`,
+              senderRole: (c as any).senderRole,
+              senderUid: (c as any).senderUid,
+              text: formatMessageText((c as any).text, {
+                requirementName: reqName,
+                defaultIssueLabel,
+              }),
+              ts: (c as any).ts,
+              inReplyTo: (c as any).inReplyTo ?? null,
+            }))
           })
         : []
 
@@ -214,23 +379,31 @@ export default function Messenger({
       setMessages(merged)
     }
 
-    const mainRef = ref(realtimeDb, `${BUSINESS_APPLICATION_PATH}/${selectedAppId}/chat`)
+    const mainRef = ref(realtimeDb, `${basePath}/chat`)
     const unsubMain = onValue(mainRef, (snap) => {
       mainData = snap.val() || {}
       updateMessagesFromSources()
     })
 
-    const reqRef = ref(realtimeDb, `${BUSINESS_APPLICATION_PATH}/${selectedAppId}/requirements`)
+    const reqRef = ref(realtimeDb, `${basePath}/requirements`)
     const unsubReq = onValue(reqRef, (snap) => {
       reqsData = snap.val() || {}
       updateMessagesFromSources()
     })
 
     return () => {
-      try { off(mainRef) } catch {}
-      try { off(reqRef) } catch {}
-      try { if (typeof unsubMain === 'function') unsubMain() } catch {}
-      try { if (typeof unsubReq === 'function') unsubReq() } catch {}
+      try {
+        off(mainRef)
+      } catch {}
+      try {
+        off(reqRef)
+      } catch {}
+      try {
+        if (typeof unsubMain === "function") unsubMain()
+      } catch {}
+      try {
+        if (typeof unsubReq === "function") unsubReq()
+      } catch {}
       setMatchedAppId(null)
     }
   }, [selectedAppId])
@@ -248,28 +421,31 @@ export default function Messenger({
       // the application has historical messages from a local JSON file. Messages
       // will be written to the realtime DB.
       const app = applications.find((a) => a.id === selectedAppId)
+      if (!app) return
+      if (app.source === "clearance" && !app.applicantUid) {
+        alert("Missing applicant information for this clearance conversation.")
+        return
+      }
 
-      // If replying to a requirement-level message, write to that requirement's chat path
+      const basePath =
+        app.source === "clearance"
+          ? `${MAYORS_CLEARANCE_APPLICATION_PATH}/${app.applicantUid}/${app.applicationId}`
+          : `${BUSINESS_APPLICATION_PATH}/${app.applicationId}`
+
+      const payload = {
+        senderRole: "admin",
+        senderUid: user.uid,
+        text: input.trim(),
+        ts: Date.now(),
+        inReplyTo: replyTarget?.messageId ?? null,
+      }
+
       if (replyTarget && replyTarget.reqName) {
-        const payload = {
-          senderRole: "admin",
-          senderUid: user.uid,
-          text: input.trim(),
-          ts: Date.now(),
-          inReplyTo: replyTarget.messageId ?? null,
-        }
-        const reqChatRef = ref(realtimeDb, `${BUSINESS_APPLICATION_PATH}/${selectedAppId}/requirements/${replyTarget.reqName}/chat`)
-        const newRef = await push(reqChatRef, payload)
+        const reqChatRef = ref(realtimeDb, `${basePath}/requirements/${replyTarget.reqName}/chat`)
+        await push(reqChatRef, payload)
       } else {
-        const chatRef = ref(realtimeDb, `${BUSINESS_APPLICATION_PATH}/${selectedAppId}/chat`)
-        const payload = {
-          senderRole: "admin",
-          senderUid: user.uid,
-          text: input.trim(),
-          ts: Date.now(),
-          inReplyTo: replyTarget?.messageId ?? null,
-        }
-        const newRef = await push(chatRef, payload)
+        const chatRef = ref(realtimeDb, `${basePath}/chat`)
+        await push(chatRef, payload)
       }
 
       setInput("")

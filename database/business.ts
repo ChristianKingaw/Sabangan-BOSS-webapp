@@ -8,7 +8,7 @@ const CREATION_PATH = "business/creation"
 export type BusinessRequirement = {
   id: string
   name: string
-  status: "pending" | "approved" | "rejected"
+  status: "pending" | "approved" | "rejected" | "updated"
   rejectionReason?: string
 }
 
@@ -145,7 +145,7 @@ export async function updateBusinessRecord(
 export async function updateRequirementStatus(
   businessId: string,
   requirementId: string,
-  status: "pending" | "approved" | "rejected",
+  status: "pending" | "approved" | "rejected" | "updated",
   rejectionReason?: string
 ): Promise<void> {
   const reqRef = ref(realtimeDb, `${CREATION_PATH}/${businessId}/requirements/${requirementId}`)
@@ -154,19 +154,25 @@ export async function updateRequirementStatus(
   const existingReq = snapshot.exists() ? snapshot.val() : null
   const reqName = existingReq?.name ?? requirementId
 
-  const updateData: { status: string; rejectionReason?: string } = { status }
+  // If a previously rejected requirement is being changed (often passed as pending), mark it as updated instead.
+  const nextStatus = existingReq?.status === "rejected" && status === "pending" ? "updated" : status
+
+  const updateData: { status: string; rejectionReason?: string } = { status: nextStatus }
   if (rejectionReason) {
     updateData.rejectionReason = rejectionReason
   }
 
   await update(reqRef, updateData)
 
-  // If the requirement was rejected, push an issue message into the business chat
-  if (status === "rejected") {
+  // If the requirement was rejected or updated, push an issue message into the business chat
+  if (nextStatus === "rejected" || nextStatus === "updated") {
     try {
-      const messageText = rejectionReason
-        ? `Requirement "${reqName}" rejected: ${rejectionReason}`
-        : `Requirement "${reqName}" rejected.`
+      const isReject = nextStatus === "rejected"
+      const messageText = isReject
+        ? rejectionReason
+          ? `Requirement "${reqName}" rejected: ${rejectionReason}`
+          : `Requirement "${reqName}" rejected.`
+        : `Requirement "${reqName}" was updated with new documents.`
 
       // Push to creation chat (existing behavior)
       const chatRef = ref(realtimeDb, `${CREATION_PATH}/${businessId}/chat`)
@@ -191,7 +197,7 @@ export async function updateRequirementStatus(
         // Use the requirement's name as the key under the application requirements so the messenger labels it
         const reqKey = existingReq?.name ?? requirementId
         const appReqChatRef = ref(realtimeDb, `${BUSINESS_APPLICATION_PATH}/${businessId}/requirements/${reqKey}/chat`)
-        const reasonText = rejectionReason ?? "Rejected"
+        const reasonText = isReject ? rejectionReason ?? "Rejected" : "Updated"
         await push(appReqChatRef, { senderRole: "admin", text: reasonText, ts: Date.now() })
       } catch (innerErr) {
         // eslint-disable-next-line no-console

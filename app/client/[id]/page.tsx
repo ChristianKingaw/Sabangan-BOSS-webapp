@@ -31,6 +31,8 @@ import Chat from "@/components/ui/chat"
 // Import necessary libraries for rendering docx files
 import { renderAsync } from "docx-preview";
 import { handlePrintHtml, handlePrintPdf } from "@/lib/print"
+import { mergePdfUrls } from "@/lib/pdf"
+import { PDFDocument } from "pdf-lib"
 
 const firebaseAuth = getAuth(firebaseApp)
 
@@ -67,6 +69,7 @@ function ClientRequirementsContent() {
   const [showRejectModal, setShowRejectModal] = useState(false)
   const [rejectReason, setRejectReason] = useState("")  
   const [imageLoading, setImageLoading] = useState(false)
+  const [loadingFiles, setLoadingFiles] = useState<Set<string>>(new Set())
   const [isPersisting, setIsPersisting] = useState(false)
   const [isAuthReady, setIsAuthReady] = useState(false)
 
@@ -75,7 +78,13 @@ function ClientRequirementsContent() {
   const [isDocxModalOpen, setIsDocxModalOpen] = useState(false)
   const [isDocxLoading, setIsDocxLoading] = useState(false)
   const [docxPdfUrl, setDocxPdfUrl] = useState<string | null>(null)
+  const [isFormPreviewLoading, setIsFormPreviewLoading] = useState(false)
+  const [isFormPreviewModalOpen, setIsFormPreviewModalOpen] = useState(false)
+  const [formPreviewUrl, setFormPreviewUrl] = useState<string | null>(null)
+  const [formPreviewTempUrls, setFormPreviewTempUrls] = useState<string[]>([])
   const docxPreviewCancelRef = useRef(false)
+  const formPreviewCancelRef = useRef(false)
+  const formPreviewAbortRef = useRef<AbortController | null>(null)
 
   // Wait for Firebase Auth to be ready
   useEffect(() => {
@@ -166,30 +175,50 @@ function ClientRequirementsContent() {
 
   // Ensure loader shows when opening a document viewer (including when setSelectedDocIndex is called directly)
   useEffect(() => {
-    if (selectedDocIndex !== -1) {
-      setImageLoading(true)
+    if (!activeDocument) {
+      setLoadingFiles(new Set())
+      setImageLoading(false)
+      return
     }
-  }, [selectedDocIndex])
+    const fileIds = (activeDocument.requirement.files ?? []).map((file) => file.id)
+    setLoadingFiles(new Set(fileIds))
+    setImageLoading(true)
+  }, [activeDocument])
 
   const goToPrevDoc = useCallback(() => {
-    setSelectedDocIndex((prev) => {
-      if (prev <= 0) {
-        return prev
-      }
+    if (!activeDocument) return
+    const currentReqIndex = requirements.findIndex((r) => r.id === activeDocument.requirement.id)
+    if (currentReqIndex <= 0) return
+    const prevRequirement = requirements[currentReqIndex - 1]
+    const targetIndex = flatDocuments.findIndex((d) => d.requirement.id === prevRequirement.id)
+    if (targetIndex !== -1) {
       setImageLoading(true)
-      return prev - 1
-    })
-  }, [])
+      setSelectedDocIndex(targetIndex)
+    }
+  }, [activeDocument, requirements, flatDocuments])
 
   const goToNextDoc = useCallback(() => {
-    setSelectedDocIndex((prev) => {
-      if (prev < 0 || prev >= flatDocuments.length - 1) {
-        return prev
-      }
+    if (!activeDocument) return
+    const currentReqIndex = requirements.findIndex((r) => r.id === activeDocument.requirement.id)
+    if (currentReqIndex < 0 || currentReqIndex >= requirements.length - 1) return
+    const nextRequirement = requirements[currentReqIndex + 1]
+    const targetIndex = flatDocuments.findIndex((d) => d.requirement.id === nextRequirement.id)
+    if (targetIndex !== -1) {
       setImageLoading(true)
-      return prev + 1
+      setSelectedDocIndex(targetIndex)
+    }
+  }, [activeDocument, requirements, flatDocuments])
+
+  const handleImageLoaded = useCallback((fileId: string) => {
+    setLoadingFiles((prev) => {
+      const next = new Set(prev)
+      next.delete(fileId)
+      if (next.size === 0) {
+        setImageLoading(false)
+      }
+      return next
     })
-  }, [flatDocuments.length])
+  }, [])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -316,6 +345,15 @@ function ClientRequirementsContent() {
 
     try {
       setIsPersisting(true)
+
+      const nextRequirementIndex = (() => {
+        if (selectedDocIndex < 0 || selectedDocIndex >= flatDocuments.length) return -1
+        const currentReqId = flatDocuments[selectedDocIndex]?.requirement.id
+        for (let i = selectedDocIndex + 1; i < flatDocuments.length; i++) {
+          if (flatDocuments[i].requirement.id !== currentReqId) return i
+        }
+        return -1
+      })()
 
       const currentFileRef = ref(
         realtimeDb,
@@ -448,7 +486,11 @@ function ClientRequirementsContent() {
         setDocumentStatuses((prev) => ({ ...prev, [targetDocument.file.id]: note ? { status, reason: note } : { status } }))
       }
 
-      setSelectedDocIndex(-1)
+      if (nextRequirementIndex !== -1) {
+        setSelectedDocIndex(nextRequirementIndex)
+      } else {
+        setSelectedDocIndex(-1)
+      }
       setShowRejectModal(false)
       setRejectReason("")
     } catch (err) {
@@ -477,7 +519,205 @@ function ClientRequirementsContent() {
     await persistDocumentStatus(activeDocument, "rejected", rejectReason.trim())
   }
 
+  const convertImageBlobToPdfUrl = useCallback(async (blob: Blob) => {
+    const arrayBuffer = await blob.arrayBuffer()
+    const pdfDoc = await PDFDocument.create()
+
+    let embedded
+    try {
+      embedded = await pdfDoc.embedJpg(new Uint8Array(arrayBuffer))
+    } catch {
+      embedded = await pdfDoc.embedPng(new Uint8Array(arrayBuffer))
+    }
+
+    const page = pdfDoc.addPage()
+    const { width, height } = embedded
+    const pageWidth = page.getWidth()
+    const pageHeight = page.getHeight()
+    const scale = Math.min(pageWidth / width, pageHeight / height, 1)
+    const scaledWidth = width * scale
+    const scaledHeight = height * scale
+    const x = (pageWidth - scaledWidth) / 2
+    const y = (pageHeight - scaledHeight) / 2
+    page.drawImage(embedded, { x, y, width: scaledWidth, height: scaledHeight })
+
+    const pdfBytes = await pdfDoc.save()
+    // Normalize to a concrete ArrayBuffer (avoid SharedArrayBuffer union)
+    const pdfBuffer: ArrayBuffer = pdfBytes.slice().buffer
+    const pdfBlob = new Blob([pdfBuffer], { type: "application/pdf" })
+    return URL.createObjectURL(pdfBlob)
+  }, [])
+
+  const cleanupFormPreviewUrls = useCallback((urls: string[]) => {
+    urls.forEach((u) => {
+      try { URL.revokeObjectURL(u) } catch {}
+    })
+  }, [])
+
+  const handlePreviewApplicationForm = useCallback(async () => {
+    // reset/prepare cancel state and abort controller
+    formPreviewCancelRef.current = false
+    formPreviewAbortRef.current?.abort()
+    formPreviewAbortRef.current = new AbortController()
+
+    setIsFormPreviewModalOpen(true)
+    setIsFormPreviewLoading(true)
+    setFormPreviewUrl(null)
+    cleanupFormPreviewUrls(formPreviewTempUrls)
+    setFormPreviewTempUrls([])
+
+    try {
+      const currentUser = firebaseAuth.currentUser
+      if (!currentUser) {
+        toast.error("You must be logged in to preview the application form.")
+        router.replace("/")
+        return
+      }
+
+      const token = await currentUser.getIdToken()
+      const response = await fetch("/api/export/docx-to-pdf", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ applicationId: id }),
+        signal: formPreviewAbortRef.current?.signal,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        const message = (errorData?.error as string) || "Unable to preview application form."
+        toast.error(message)
+        return
+      }
+
+      const mainBlob = await response.blob()
+      const tempUrls: string[] = []
+      const pdfSources: string[] = []
+
+      const mainUrl = URL.createObjectURL(mainBlob)
+      tempUrls.push(mainUrl)
+      pdfSources.push(mainUrl)
+
+      // Append approved requirement files as PDFs (convert images to PDF pages)
+      if (client) {
+        for (const req of client.requirements || []) {
+          for (const f of req.files || []) {
+            try {
+              const status = String(f.status || "").toLowerCase()
+              if (!status.includes("approve")) continue
+              if (!f.downloadUrl) continue
+
+              const proxyUrl = `/api/proxy?url=${encodeURIComponent(f.downloadUrl)}`
+              const resp = await fetch(proxyUrl, { signal: formPreviewAbortRef.current?.signal })
+              if (!resp.ok) continue
+              const blob = await resp.blob()
+              const contentType = (blob.type || "").toLowerCase()
+
+              if (contentType.includes("pdf")) {
+                const url = URL.createObjectURL(blob)
+                tempUrls.push(url)
+                pdfSources.push(url)
+              } else if (contentType.startsWith("image/")) {
+                const url = await convertImageBlobToPdfUrl(blob)
+                tempUrls.push(url)
+                pdfSources.push(url)
+              }
+            } catch (err) {
+              console.warn("Skipping requirement file for preview merge", err)
+            }
+          }
+        }
+      }
+
+      if (formPreviewAbortRef.current?.signal.aborted || formPreviewCancelRef.current) {
+        // aborted while preparing sources
+        return
+      }
+
+      const mergedBlob = await mergePdfUrls(pdfSources)
+      const mergedUrl = URL.createObjectURL(mergedBlob)
+      tempUrls.push(mergedUrl)
+
+      if (!formPreviewCancelRef.current) {
+        setFormPreviewTempUrls(tempUrls)
+        setFormPreviewUrl(mergedUrl)
+      }
+    } catch (error) {
+      if ((error as any)?.name === "AbortError") {
+        // fetches were aborted, don't show an error toast
+        return
+      }
+      console.error("Failed to preview application form", error)
+      toast.error("Unable to preview application form.")
+    } finally {
+      if (!formPreviewCancelRef.current) {
+        setIsFormPreviewLoading(false)
+      } else {
+        setIsFormPreviewLoading(false)
+      }
+    }
+  }, [client, cleanupFormPreviewUrls, convertImageBlobToPdfUrl, formPreviewTempUrls, id, router])
+
+  const handleCloseFormPreview = useCallback(() => {
+    // signal cancellation to any in-flight preview work and abort network requests
+    formPreviewCancelRef.current = true
+    try { formPreviewAbortRef.current?.abort() } catch {}
+
+    cleanupFormPreviewUrls([formPreviewUrl, ...formPreviewTempUrls].filter(Boolean) as string[])
+    setFormPreviewUrl(null)
+    setFormPreviewTempUrls([])
+    setIsFormPreviewModalOpen(false)
+    setIsFormPreviewLoading(false)
+  }, [cleanupFormPreviewUrls, formPreviewTempUrls, formPreviewUrl])
+
   const [unreadRequirements, setUnreadRequirements] = useState<Set<string>>(new Set())
+  const previousFilesRef = useRef<Map<string, { fileName: string; fileSize: number; fileHash: string; status: string }>>(new Map())
+
+  useEffect(() => {
+    if (!client) return
+
+    const prev = previousFilesRef.current
+    const multiUpdates: Record<string, any> = {}
+    let hasReplacement = false
+
+    client.requirements.forEach((requirement) => {
+      requirement.files.forEach((file) => {
+        const key = `${requirement.name}::${file.id}`
+        const normalizedStatus = (file.status ?? "").toLowerCase()
+        const prevEntry = prev.get(key)
+        const fileName = file.fileName ?? ""
+        const fileSize = file.fileSize ?? 0
+        const fileHash = file.fileHash ?? ""
+
+        if (
+          prevEntry &&
+          prevEntry.status === "rejected" &&
+          (normalizedStatus !== "rejected" || fileHash !== prevEntry.fileHash || fileSize !== prevEntry.fileSize || fileName !== prevEntry.fileName)
+        ) {
+          const basePath = `${BUSINESS_APPLICATION_PATH}/${client.id}/requirements/${requirement.name}/files/${file.id}`
+          multiUpdates[`${basePath}/status`] = "updated"
+          multiUpdates[`${basePath}/uploadedAt`] = Date.now()
+          hasReplacement = true
+        }
+
+        prev.set(key, { fileName, fileSize, fileHash, status: normalizedStatus })
+      })
+    })
+
+    if (!hasReplacement) return
+
+    multiUpdates[`${BUSINESS_APPLICATION_PATH}/${client.id}/status`] = "Pending Update Review"
+
+    ;(async () => {
+      try {
+        await update(ref(realtimeDb), multiUpdates)
+      } catch (err) {
+        console.error("Failed to mark replaced requirement as updated", err)
+      }
+    })()
+  }, [client])
 
   useEffect(() => {
     if (!client) return
@@ -632,6 +872,13 @@ function ClientRequirementsContent() {
 
   const requirementCount = requirements.length
 
+  const currentRequirementIndex =
+    selectedDocIndex >= 0 && selectedDocIndex < flatDocuments.length
+      ? requirements.findIndex((r) => r.id === flatDocuments[selectedDocIndex].requirement.id)
+      : -1
+  const hasPrevRequirement = currentRequirementIndex > 0
+  const hasNextRequirement = currentRequirementIndex >= 0 && currentRequirementIndex < requirements.length - 1
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Header showBack onBack={handleBack} />
@@ -672,6 +919,21 @@ function ClientRequirementsContent() {
             Requirements ({requirementCount} item{requirementCount === 1 ? "" : "s"})
           </h2>
         </div>
+        <div className="flex justify-end mb-3">
+          <Button
+            variant="requirements"
+            size="lg"
+            onClick={(e) => {
+              e.stopPropagation()
+              handlePreviewApplicationForm()
+            }}
+            disabled={isFormPreviewLoading}
+            className="shadow-md bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            Preview Application Form
+          </Button>
+        </div>
+
         <div className="bg-card border border-border rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
@@ -692,12 +954,13 @@ function ClientRequirementsContent() {
                   </tr>
                 ) : (
                   requirements.map((requirement, index) => {
+                    const rowIndex = index + 1
                     const files = requirement.files || []
 
                     if (files.length === 0) {
                       return (
                         <tr key={requirement.id} className={index % 2 === 0 ? "bg-background" : "bg-muted/30"}>
-                          <td className="border border-border p-3 text-center text-muted-foreground">{index + 1}</td>
+                          <td className="border border-border p-3 text-center text-muted-foreground">{rowIndex}</td>
                           <td className="border border-border p-3">
                             <div className="flex items-center gap-3 justify-center">
                               <div className="flex flex-col">
@@ -741,7 +1004,7 @@ function ClientRequirementsContent() {
 
                     return (
                       <tr key={requirement.id} className={index % 2 === 0 ? "bg-background" : "bg-muted/30"}>
-                        <td className="border border-border p-3 text-center text-muted-foreground align-top">{index + 1}</td>
+                        <td className="border border-border p-3 text-center text-muted-foreground align-top">{rowIndex}</td>
                         <td className="border border-border p-3">
                           <div className="flex items-center gap-3 justify-center">
                             <div className="flex flex-col">
@@ -796,7 +1059,7 @@ function ClientRequirementsContent() {
           className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
           onClick={() => setSelectedDocIndex(-1)}
         >
-          {selectedDocIndex > 0 && (
+          {hasPrevRequirement && (
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -809,7 +1072,7 @@ function ClientRequirementsContent() {
             </button>
           )}
 
-          {selectedDocIndex < flatDocuments.length - 1 && (
+          {hasNextRequirement && (
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -826,48 +1089,55 @@ function ClientRequirementsContent() {
             className="bg-card rounded-lg max-w-[90vw] w-full max-h-[98vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-2 py-2 border-b border-border sticky top-0 bg-card z-10">
-              <div>
+            <div className="relative flex items-center justify-center px-2 py-2 border-b border-border sticky top-0 bg-card z-10">
+              <div className="text-center">
                 <h3 className="text-lg font-semibold text-foreground">{activeDocument.requirement.name}</h3>
                 <p className="text-xs text-muted-foreground">
                   Document {selectedDocIndex + 1} of {flatDocuments.length} • Press Esc to close, ← → to navigate
                 </p>
               </div>
-              <button onClick={() => setSelectedDocIndex(-1)} className="text-muted-foreground hover:text-foreground">
+              <button
+                onClick={() => setSelectedDocIndex(-1)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
             <div className="p-0">
               {activeDocument.requirement.files && activeDocument.requirement.files.length > 1 ? (
                 <div className="flex flex-col gap-4 p-0 overflow-y-auto">
-                  {activeDocument.requirement.files.map((f, idx) => (
-                    <div key={f.id} className="w-full">
-                      <div className="relative w-full h-[98vh]" style={{ minHeight: "98vh" }}>
-                        {imageLoading && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-muted/50 rounded-md z-10">
-                            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                          </div>
+                  {activeDocument.requirement.files.map((f, idx) => {
+                    const isFileLoading = imageLoading || loadingFiles.has(f.id)
+                    return (
+                      <div key={f.id} className="w-full">
+                        <div className="relative w-full h-[98vh]" style={{ minHeight: "98vh" }}>
+                          {isFileLoading && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-muted/50 rounded-md z-10">
+                              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                            </div>
+                          )}
+                          <Image
+                            src={f.downloadUrl || "/placeholder.svg"}
+                            alt={activeDocument.requirement.name}
+                            fill
+                            sizes="(max-width: 768px) 100vw, 80vw"
+                            className={`object-contain rounded-md w-full h-full transition-opacity ${isFileLoading ? "opacity-0" : "opacity-100"}`}
+                            priority
+                            unoptimized
+                            onLoad={() => handleImageLoaded(f.id)}
+                            onError={() => handleImageLoaded(f.id)}
+                          />
+                        </div>
+                        {idx !== activeDocument.requirement.files.length - 1 && (
+                          <div className="h-2 bg-border w-full my-2" />
                         )}
-                        <Image
-                          src={f.downloadUrl || "/placeholder.svg"}
-                          alt={activeDocument.requirement.name}
-                          fill
-                          sizes="(max-width: 768px) 100vw, 80vw"
-                          className="object-contain rounded-md w-full h-full"
-                          priority
-                          unoptimized
-                          onLoad={() => setImageLoading(false)}
-                        />
                       </div>
-                      {idx !== activeDocument.requirement.files.length - 1 && (
-                        <div className="h-2 bg-border w-full my-2" />
-                      )}
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               ) : (
                 <div className="relative w-full h-[98vh]" style={{ minHeight: "98vh" }}>
-                  {imageLoading && (
+                  {(imageLoading || loadingFiles.has(activeDocument.file.id)) && (
                     <div className="absolute inset-0 flex items-center justify-center bg-muted/50 rounded-md">
                       <Loader2 className="h-8 w-8 animate-spin text-primary" />
                     </div>
@@ -877,10 +1147,11 @@ function ClientRequirementsContent() {
                     alt={activeDocument.requirement.name}
                     fill
                     sizes="(max-width: 768px) 100vw, 80vw"
-                    className="object-contain rounded-md w-full h-full"
+                    className={`object-contain rounded-md w-full h-full transition-opacity ${(imageLoading || loadingFiles.has(activeDocument.file.id)) ? "opacity-0" : "opacity-100"}`}
                     priority
                     unoptimized
-                    onLoad={() => setImageLoading(false)}
+                    onLoad={() => handleImageLoaded(activeDocument.file.id)}
+                    onError={() => handleImageLoaded(activeDocument.file.id)}
                   />
                 </div>
               )}
@@ -1029,6 +1300,59 @@ function ClientRequirementsContent() {
                 Print
               </Button>
               <Button variant="outline" onClick={handleCloseDocxModal}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isFormPreviewModalOpen && (
+        <div
+          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+          onClick={handleCloseFormPreview}
+        >
+          <div
+            className="bg-card rounded-lg max-w-screen-2xl w-full max-h-[98vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+              <h3 className="text-lg font-semibold text-foreground">Application Form Preview</h3>
+              <button onClick={handleCloseFormPreview} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-hidden">
+              {isFormPreviewLoading && (
+                <div className="h-full flex items-center justify-center text-muted-foreground gap-2">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  Preparing preview...
+                </div>
+              )}
+              {!isFormPreviewLoading && formPreviewUrl && (
+                <iframe src={formPreviewUrl} className="w-full h-[82vh] border-0" />
+              )}
+              {!isFormPreviewLoading && !formPreviewUrl && (
+                <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+                  Unable to display application form.
+                </div>
+              )}
+            </div>
+
+            <div className="px-4 py-3 border-t border-border flex justify-end gap-2">
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (formPreviewUrl) {
+                    handlePrintPdf(formPreviewUrl, client?.applicantName ? `${client.applicantName} Application Form` : "Application Form")
+                  }
+                }}
+                disabled={!formPreviewUrl || isFormPreviewLoading}
+              >
+                Print
+              </Button>
+              <Button variant="outline" onClick={handleCloseFormPreview}>
                 Close
               </Button>
             </div>

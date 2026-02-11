@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "build": "next build",
-    "dev": "next dev --turbo",
+    "dev": "cross-env NEXT_DISABLE_TURBOPACK=1 NEXT_WEBPACK=1 next dev",
+    "add:staff": "tsx scripts/add-staff.ts",
     "lint": "eslint .",
     "start": "next start",
     "dump-data": "tsx database/data/data.ts"

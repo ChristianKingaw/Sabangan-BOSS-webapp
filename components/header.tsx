@@ -111,7 +111,7 @@ export default function Header({ title, showLogout, onLogout, showBack, onBack, 
               )}
 
               {showLogout && (
-                <Button variant="outline" className={actionButtonClass} onClick={onLogout}>
+                <Button variant="destructive" className="hover:shadow-lg hover:scale-105 transition-all duration-200" onClick={onLogout}>
                   <LogOut className="h-4 w-4 mr-2" />
                   Logout
                 </Button>
@@ -127,7 +127,7 @@ export default function Header({ title, showLogout, onLogout, showBack, onBack, 
               )}
 
               {showLogout && (
-                <Button variant="outline" className={actionButtonClass} onClick={onLogout}>
+                <Button variant="destructive" className="hover:shadow-lg hover:scale-105 transition-all duration-200" onClick={onLogout}>
                   <LogOut className="h-4 w-4 mr-2" />
                   Logout
                 </Button>

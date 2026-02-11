@@ -182,8 +182,15 @@ export async function POST(request: NextRequest) {
         pdfBuffer = mainPdf
       }
     } catch (err) {
+      const errStr = String(err || "")
+      // If the error is from soffice/LibreOffice or missing binary, don't log full stack to avoid noisy errors.
+      if (errStr.toLowerCase().includes("soffice") || errStr.toLowerCase().includes("enoent")) {
+        console.warn("Server-side PDF conversion unavailable; soffice failed:", errStr)
+        return NextResponse.json({ error: "Failed to convert to PDF", details: errStr }, { status: 500 })
+      }
+
       console.error("PDF conversion error:", err)
-      return NextResponse.json({ error: "Failed to convert to PDF", details: String(err) }, { status: 500 })
+      return NextResponse.json({ error: "Failed to convert to PDF", details: errStr }, { status: 500 })
     }
 
     return new NextResponse(new Uint8Array(pdfBuffer), {

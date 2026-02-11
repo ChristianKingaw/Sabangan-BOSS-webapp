@@ -20,13 +20,25 @@
         }
       },
       "webapp": {
-        ".read": true,
-        ".write": "auth != null",
-        ".indexOn": ["email"],
-        "$uid": {
+        "staff": {
           ".read": true,
           ".write": "auth != null",
-          ".indexOn": ["email"]
+          ".indexOn": ["email"],
+          "$uid": {
+            ".read": true,
+            ".write": "auth != null",
+            ".indexOn": ["email"]
+          }
+        },
+        "admin": {
+          ".read": true,
+          ".write": "auth != null",
+          ".indexOn": ["email"],
+          "$uid": {
+            ".read": true,
+            ".write": "auth != null",
+            ".indexOn": ["email"]
+          }
         }
       }
     },
@@ -146,8 +158,30 @@
     },
 
     "mayors_clearance_files": {
-      ".read": "auth != null && root.child('admins/' + auth.uid).val() == true",
-      ".write": "auth != null && root.child('admins/' + auth.uid).val() == true"
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+
+    "mayors_clearance": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["meta/createdAt", "meta/status", "meta/applicantUid"],
+      "$uid": {
+        "$appId": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        }
+      }
+    },
+
+    "mayors_clearance_applications": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["meta/createdAt", "meta/status", "meta/applicantUid"],
+      "$appId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
     }
   }
 }
