@@ -37,6 +37,7 @@ export type BusinessApplicationRecord = {
   form?: Record<string, any>
   status?: string
   overallStatus?: string
+  approvedAt?: number
   submittedAt?: number
   requirements: BusinessRequirement[]
   chat?: ChatMessage[]
@@ -101,6 +102,16 @@ export const parseDateToTimestamp = (value?: string) => {
   const parsed = new Date(value)
   const time = parsed.getTime()
   return Number.isNaN(time) ? undefined : time
+}
+
+const coerceTimestamp = (value: unknown) => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === "string" && value.trim()) {
+    return parseDateToTimestamp(value)
+  }
+  return undefined
 }
 
 export const getStatusBadge = (status?: string, overallStatus?: string): StatusBadge => {
@@ -189,6 +200,26 @@ const normalizeRequirements = (requirementsNode: Record<string, any> | undefined
   }))
 }
 
+const getLatestApprovedRequirementTimestamp = (requirements: BusinessRequirement[]): number | undefined => {
+  const approvedUploads: number[] = []
+
+  requirements.forEach((requirement) => {
+    requirement.files.forEach((file) => {
+      const normalizedStatus = (file.status ?? "").toLowerCase()
+      if (!normalizedStatus.includes("approve")) return
+      if (typeof file.uploadedAt === "number" && Number.isFinite(file.uploadedAt)) {
+        approvedUploads.push(file.uploadedAt)
+      }
+    })
+  })
+
+  if (approvedUploads.length === 0) {
+    return undefined
+  }
+
+  return Math.max(...approvedUploads)
+}
+
 export const normalizeBusinessApplication = (id: string, payload: any): BusinessApplicationRecord => {
   const form = payload?.form ?? {}
   const meta = payload?.meta ?? {}
@@ -230,6 +261,16 @@ export const normalizeBusinessApplication = (id: string, payload: any): Business
     form,
     status: meta.status ?? "",
     overallStatus: derivedOverallStatus,
+    approvedAt:
+      coerceTimestamp(meta.approvedAt) ??
+      coerceTimestamp(meta.approvedOn) ??
+      coerceTimestamp(meta.approvalDate) ??
+      coerceTimestamp(meta.approvedDate) ??
+      coerceTimestamp(meta.dateApproved) ??
+      (derivedOverallStatus === "Approved"
+        ? getLatestApprovedRequirementTimestamp(normalizedRequirements) ??
+          (typeof meta.updatedAt === "number" ? meta.updatedAt : undefined)
+        : undefined),
     submittedAt,
     requirements: normalizedRequirements,
     chat: normalizeRequirementChat(payload?.chat),

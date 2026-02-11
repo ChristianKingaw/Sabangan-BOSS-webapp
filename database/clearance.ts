@@ -50,6 +50,35 @@ export async function clearClearanceFiles() {
 
 export type ClearanceFileWithId = ClearanceFileRecord & { id: string }
 
+const normalizeTimestamp = (value: unknown): number => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value < 1_000_000_000_000 ? value * 1000 : value
+  }
+
+  if (typeof value === "string") {
+    const numeric = Number(value)
+    if (Number.isFinite(numeric)) {
+      return numeric < 1_000_000_000_000 ? numeric * 1000 : numeric
+    }
+    const parsed = Date.parse(value)
+    return Number.isNaN(parsed) ? 0 : parsed
+  }
+
+  if (value && typeof value === "object") {
+    const anyValue = value as Record<string, unknown>
+    const nested = anyValue.Value ?? anyValue.value ?? anyValue.timestamp
+    if (nested !== undefined) {
+      return normalizeTimestamp(nested)
+    }
+    const seconds = anyValue.seconds ?? anyValue._seconds
+    if (typeof seconds === "number" && Number.isFinite(seconds)) {
+      return seconds * 1000
+    }
+  }
+
+  return 0
+}
+
 export function subscribeToClearanceFiles(callback: (rows: ClearanceFileWithId[]) => void, onError?: (err: Error) => void): Unsubscribe {
   const clearanceRef = ref(realtimeDb, CLEARANCE_PATH)
   return onValue(
@@ -62,13 +91,14 @@ export function subscribeToClearanceFiles(callback: (rows: ClearanceFileWithId[]
         const seen = new Set<string>()
         const list: ClearanceFileWithId[] = []
         for (const [id, payload] of Object.entries(value) as Array<[string, any]>) {
-          const key = `${payload?.fileName ?? ""}|${payload?.createdAt ?? 0}|${payload?.rowCount ?? 0}|${payload?.createdBy ?? ""}`
+          const normalizedCreatedAt = normalizeTimestamp(payload?.createdAt)
+          const key = `${payload?.fileName ?? ""}|${normalizedCreatedAt}|${payload?.rowCount ?? 0}|${payload?.createdBy ?? ""}`
           if (seen.has(key)) continue
           seen.add(key)
           list.push({
             id,
             fileName: payload?.fileName ?? "",
-            createdAt: payload?.createdAt ?? 0,
+            createdAt: normalizedCreatedAt,
             rowCount: payload?.rowCount ?? 0,
             dataBase64: payload?.dataBase64 ?? "",
             createdBy: payload?.createdBy ?? null,

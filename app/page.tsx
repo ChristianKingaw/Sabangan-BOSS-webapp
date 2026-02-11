@@ -2,11 +2,33 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef, type FormEvent, type MouseEvent, type ReactNode } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { LogIn, Eye, EyeOff, LogOut, Search, FileText, XCircle, Award, Download, LayoutDashboard, CalendarDays, Check, Loader2, MessageSquare, RefreshCw } from "lucide-react"
+import {
+  LogIn,
+  Eye,
+  EyeOff,
+  LogOut,
+  Search,
+  FileText,
+  XCircle,
+  Award,
+  Download,
+  LayoutDashboard,
+  CalendarDays,
+  Check,
+  Loader2,
+  MessageSquare,
+  RefreshCw,
+  ClipboardList,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  CheckCircle,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import Image from "next/image"
@@ -19,7 +41,7 @@ import { saveClearanceFile, subscribeToClearanceFiles, clearClearanceFiles, type
 import { findStaffByEmail, updateStaffEmailVerificationStatus } from "@/database/staff"
 import { getAuth, onAuthStateChanged, sendEmailVerification, signInWithEmailAndPassword, signOut } from "firebase/auth"
 import { FirebaseError } from "firebase/app"
-import { onValue, ref, off, get } from "firebase/database"
+import { onValue, ref, off, get, update } from "firebase/database"
 import { cn } from "@/lib/utils"
 import { handlePrintHtml, handlePrintPdf } from "@/lib/print"
 import { toast } from "sonner"
@@ -29,11 +51,19 @@ import {
   BUSINESS_APPLICATION_PATH,
   type ApplicationType,
   type BusinessApplicationRecord,
+  type BusinessRequirement,
+  type BusinessRequirementFile,
   parseDateToTimestamp,
   getStatusBadge,
   normalizeBusinessApplication,
   buildRequirementNotificationId,
 } from "@/lib/business-applications"
+import {
+  MAYORS_CLEARANCE_APPLICATION_PATH,
+  normalizeClearanceApplicant,
+  type ClearanceApplicationRecord,
+  buildClearanceMessengerThreadId,
+} from "@/lib/clearance-applications"
 
 const MS_IN_DAY = 24 * 60 * 60 * 1000
 const RECENT_NOTIFICATION_DAYS = 2
@@ -76,6 +106,37 @@ const getLatestClientMessageTimestamp = (payload: any): number | undefined => {
   return Math.max(...ts)
 }
 
+const buildBusinessLatestClientTsMap = (node: Record<string, any>) => {
+  const computed: Record<string, number> = {}
+  for (const [id, payload] of Object.entries(node)) {
+    try {
+      const lastClientTs = getLatestClientMessageTimestamp(payload)
+      if (lastClientTs === undefined) continue
+      computed[id] = lastClientTs
+    } catch {}
+  }
+  return computed
+}
+
+const buildClearanceLatestClientTsMap = (node: Record<string, any>) => {
+  const computed: Record<string, number> = {}
+  for (const [applicantUid, applications] of Object.entries(node)) {
+    if (!applications || typeof applications !== "object") {
+      continue
+    }
+
+    for (const [applicationId, payload] of Object.entries(applications as Record<string, any>)) {
+      try {
+        const lastClientTs = getLatestClientMessageTimestamp(payload)
+        if (lastClientTs === undefined) continue
+        const threadId = buildClearanceMessengerThreadId(applicantUid, applicationId)
+        computed[threadId] = lastClientTs
+      } catch {}
+    }
+  }
+  return computed
+}
+
 const isWithinRecentNotificationWindow = (timestamp: number) => {
   if (!Number.isFinite(timestamp)) {
     return false
@@ -107,6 +168,8 @@ type NotificationGroup = {
   items: NotificationEvent[]
 }
 
+type ClearanceStatusFilter = "All" | "Approved" | "Pending" | "Rejected"
+
 const buildNotificationEvents = (records: BusinessApplicationRecord[]): NotificationEvent[] => {
   const events: NotificationEvent[] = []
 
@@ -117,16 +180,24 @@ const buildNotificationEvents = (records: BusinessApplicationRecord[]): Notifica
 
     const allRequirementUploads: number[] = []
     const recentRequirementUploads: number[] = []
+    const hasUpdatedStatus = record.requirements.some((requirement) =>
+      requirement.files.some((file) => (file.status ?? "").toLowerCase() === "updated")
+    )
 
     record.requirements.forEach((requirement) => {
       requirement.files.forEach((file) => {
-        if (typeof file.uploadedAt !== "number") {
+        const statusLower = (file.status ?? "").toLowerCase()
+        let ts = typeof file.uploadedAt === "number" ? file.uploadedAt : undefined
+        if (!ts && statusLower === "updated") {
+          ts = Date.now()
+        }
+        if (!ts) {
           return
         }
 
-        allRequirementUploads.push(file.uploadedAt)
-        if (isWithinRecentNotificationWindow(file.uploadedAt)) {
-          recentRequirementUploads.push(file.uploadedAt)
+        allRequirementUploads.push(ts)
+        if (isWithinRecentNotificationWindow(ts)) {
+          recentRequirementUploads.push(ts)
         }
       })
     })
@@ -141,6 +212,7 @@ const buildNotificationEvents = (records: BusinessApplicationRecord[]): Notifica
       const hadEarlierUploads = allRequirementUploads.some(
         (timestamp) => timestamp <= latestRequirementUpload - REQUIREMENT_UPDATE_THRESHOLD_MS
       )
+      const isUpdateEvent = hasUpdatedStatus || hadEarlierUploads
 
       const notificationId =
         buildRequirementNotificationId(record) ?? `requirements-${record.id}-${latestRequirementUpload}`
@@ -149,7 +221,7 @@ const buildNotificationEvents = (records: BusinessApplicationRecord[]): Notifica
         id: notificationId,
         clientId: record.id,
         entityName: targetName,
-        action: hadEarlierUploads
+        action: isUpdateEvent
           ? "updated the requirements for their"
           : "just submitted the requirements for their",
         type: record.applicationType,
@@ -185,6 +257,68 @@ const formatDateLabelFromKey = (key: string) => {
   }
   const date = new Date(year, month - 1, day)
   return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+}
+
+const getClearanceFileYear = (file: ClearanceFileWithId): number | null => {
+  const nameYear = (file.fileName || "").match(/\b(20\d{2})\b/)
+  if (nameYear) {
+    return Number(nameYear[1])
+  }
+
+  const raw = (file as { createdAt?: unknown }).createdAt
+  let timestamp: number | null = null
+
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    timestamp = raw < 1_000_000_000_000 ? raw * 1000 : raw
+  } else if (typeof raw === "string") {
+    const numeric = Number(raw)
+    if (Number.isFinite(numeric)) {
+      timestamp = numeric < 1_000_000_000_000 ? numeric * 1000 : numeric
+    } else {
+      const parsed = Date.parse(raw)
+      if (!Number.isNaN(parsed)) {
+        timestamp = parsed
+      }
+    }
+  }
+
+  if (timestamp !== null) {
+    const createdYear = new Date(timestamp).getFullYear()
+    if (!Number.isNaN(createdYear)) {
+      return createdYear
+    }
+  }
+
+  return null
+}
+
+const getYearFromDateValue = (value: unknown): number | null => {
+  if (value instanceof Date) {
+    const year = value.getFullYear()
+    return Number.isNaN(year) ? null : year
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const timestamp = value < 1_000_000_000_000 ? value * 1000 : value
+    const year = new Date(timestamp).getFullYear()
+    return Number.isNaN(year) ? null : year
+  }
+
+  if (typeof value === "string") {
+    const numeric = Number(value)
+    if (Number.isFinite(numeric)) {
+      const timestamp = numeric < 1_000_000_000_000 ? numeric * 1000 : numeric
+      const year = new Date(timestamp).getFullYear()
+      return Number.isNaN(year) ? null : year
+    }
+    const parsed = Date.parse(value)
+    if (!Number.isNaN(parsed)) {
+      const year = new Date(parsed).getFullYear()
+      return Number.isNaN(year) ? null : year
+    }
+  }
+
+  return null
 }
 
 const buildNotificationGroups = (events: NotificationEvent[]): NotificationGroup[] => {
@@ -226,10 +360,10 @@ const buildNotificationGroups = (events: NotificationEvent[]): NotificationGroup
 }
 
 type SortType = "default" | "firstComeFirstServe"
-type TypeFilterType = "All" | ApplicationType
-type PageType = "login" | "home" | "clients" | "clearance-clients" | "lgu-status"
+type TypeFilterType = "All" | "Approved" | "Pending"
+type PageType = "login" | "home" | "clients" | "clearance-applications" | "clearance-clients" | "lgu-status"
 
-const allowedPages: PageType[] = ["login", "home", "clients", "clearance-clients", "lgu-status"]
+const allowedPages: PageType[] = ["login", "home", "clients", "clearance-applications", "clearance-clients", "lgu-status"]
 const publicPages: PageType[] = ["login"]
 
 const isPublicPage = (page: PageType) => publicPages.includes(page)
@@ -244,6 +378,7 @@ type AuthenticatedNavItem = {
 const authenticatedNavItems: AuthenticatedNavItem[] = [
   { id: "home", label: "Home", icon: LayoutDashboard },
   { id: "clients", label: "Business Application", icon: FileText },
+  { id: "clearance-applications", label: "Mayor's Clearance Application", icon: ClipboardList },
   { id: "clearance-clients", label: "Mayor's Clearance", icon: Award },
   { id: "lgu-status", label: "LGU Status", icon: CalendarDays, href: "/lgu-status" },
 ]
@@ -356,10 +491,19 @@ export default function HomePage() {
   const [currentPage, setCurrentPage] = useState<PageType>("login")
   const [sortBy, setSortBy] = useState<SortType>("firstComeFirstServe")
   const [applicationDateFilter, setApplicationDateFilter] = useState<Date | undefined>(undefined)
-  const [closureDateFilter, setClosureDateFilter] = useState<Date | undefined>(undefined)
   const [clients, setClients] = useState<BusinessApplicationRecord[]>([])
   const [clientsLoading, setClientsLoading] = useState(false)
   const [clientsError, setClientsError] = useState<string | null>(null)
+  const [clearanceApplicants, setClearanceApplicants] = useState<ClearanceApplicationRecord[]>([])
+  const [clearanceApplicantsLoading, setClearanceApplicantsLoading] = useState(false)
+  const [clearanceApplicantsError, setClearanceApplicantsError] = useState<string | null>(null)
+  const [clearanceApplicantsSearch, setClearanceApplicantsSearch] = useState("")
+  const [clearanceApplicantsStatus, setClearanceApplicantsStatus] = useState<ClearanceStatusFilter>("All")
+  const [clearanceApplicationDateFilter, setClearanceApplicationDateFilter] = useState<Date | undefined>(undefined)
+  const [clearanceRecordRange, setClearanceRecordRange] = useState<"monthly" | "yearly">("yearly")
+  const [clearanceRecordMonth, setClearanceRecordMonth] = useState<number | null>(null)
+  const [clearanceRecordYear, setClearanceRecordYear] = useState<number | null>(null)
+  const [clearanceRecordSearch, setClearanceRecordSearch] = useState("")
   const [clearanceFiles, setClearanceFiles] = useState<ClearanceFileWithId[]>([])
   const [clearanceFilesLoading, setClearanceFilesLoading] = useState(true)
   const [isClearanceGenerating, setIsClearanceGenerating] = useState(false)
@@ -374,9 +518,26 @@ export default function HomePage() {
   const [docxPreviewLoading, setDocxPreviewLoading] = useState(false)
   const [docxPreviewTitle, setDocxPreviewTitle] = useState("Application Form Preview")
   const [docxPreviewError, setDocxPreviewError] = useState<string | null>(null)
+  const [barangayPreview, setBarangayPreview] = useState<{
+    record: ClearanceApplicationRecord
+    url: string
+    requirementName: string
+    fileId: string
+  } | null>(null)
+  const [isBarangayActionLoading, setIsBarangayActionLoading] = useState(false)
+  const [showBarangayRejectModal, setShowBarangayRejectModal] = useState(false)
+  const [barangayRejectReason, setBarangayRejectReason] = useState("")
+  type BarangayDocumentItem = { requirement: BusinessRequirement; file: BusinessRequirementFile }
+  const [barangayDocuments, setBarangayDocuments] = useState<BarangayDocumentItem[]>([])
+  const [barangaySelectedDocIndex, setBarangaySelectedDocIndex] = useState<number>(-1)
+  const [barangayImageLoading, setBarangayImageLoading] = useState(false)
+  const [barangayLoadingFiles, setBarangayLoadingFiles] = useState<Set<string>>(new Set())
   const docxPreviewCancelRef = useRef(false)
   const docxPreviewAbortRef = useRef<AbortController | null>(null)
   const [docxPreviewClientId, setDocxPreviewClientId] = useState<string | null>(null)
+  const previousRequirementFilesRef = useRef<
+    Map<string, { fileName: string; fileSize: number; fileHash: string; status: string }>
+  >(new Map())
 
   type DocxPreviewCacheEntry = {
     signature: string | null
@@ -458,7 +619,7 @@ export default function HomePage() {
   const [readNotifications, setReadNotifications] = useState<Set<string>>(new Set())
   const [isReadNotificationsLoaded, setIsReadNotificationsLoaded] = useState(false)
   const [clearedRequirementClientIds, setClearedRequirementClientIds] = useState<Set<string>>(new Set())
-  const generateAndSaveClearanceFileRef = useRef<(() => Promise<void>) | null>(null)
+  const generateAndSaveClearanceFileRef = useRef<((targetYear?: number) => Promise<{ fileName: string; base64: string } | null>) | null>(null)
   const notificationEvents = useMemo(() => buildNotificationEvents(clients), [clients])
   const notificationGroups = useMemo(() => buildNotificationGroups(notificationEvents), [notificationEvents])
   const hasNotifications = notificationGroups.length > 0
@@ -489,10 +650,368 @@ export default function HomePage() {
     () =>
       clients.filter((client) => {
         const normalized = (client.overallStatus || client.status || "").toLowerCase()
-        return normalized.includes("approve")
+        return (
+          normalized.includes("approve") ||
+          normalized.includes("complete") ||
+          normalized.includes("process")
+        )
       }),
     [clients]
   )
+
+  const approvedClearanceApplicants = useMemo(() => {
+    return clearanceApplicants.filter((record) => {
+      const normalized = (record.overallStatus || record.status || "").toLowerCase()
+      return normalized.includes("approve") || normalized.includes("complete") || normalized.includes("process")
+    })
+  }, [clearanceApplicants])
+
+  const clearanceRecords = useMemo(() => {
+    const fromClearance = approvedClearanceApplicants.map((record) => {
+      const form = record.form || {}
+      const nameParts = getClearanceNameParts(form)
+      const composedName = [nameParts.firstName, nameParts.middleName, nameParts.lastName].filter(Boolean).join(" ")
+      const phone =
+        (form.phone ?? form.mobile ?? form.contactNumber ?? form.phoneNumber ?? "").toString().trim()
+      return {
+        id: `clearance-${record.id}`,
+        fullName: composedName || record.applicantName || "",
+        address: formatClearanceAddress(form),
+        phone,
+        date: record.applicationDate ?? record.submittedAt ?? null,
+      }
+    })
+
+    const fromBusiness = approvedClients.map((client) => {
+      const form = client.form || {}
+      const nameParts = getClearanceNameParts(form)
+      const composedName = [nameParts.firstName, nameParts.middleName, nameParts.lastName].filter(Boolean).join(" ")
+      const phone =
+        (form.businessMobile ?? form.ownerMobile ?? form.mobile ?? form.phone ?? "").toString().trim()
+      return {
+        id: `business-${client.id}`,
+        fullName: composedName || client.applicantName || "",
+        address: formatClearanceAddress(form),
+        phone,
+        date:
+          form.dateOfApplication ??
+          form.registrationDate ??
+          client.applicationDate ??
+          client.approvedAt ??
+          client.submittedAt ??
+          null,
+      }
+    })
+
+    return [...fromClearance, ...fromBusiness]
+  }, [approvedClearanceApplicants, approvedClients])
+
+  const clearanceRecordYears = useMemo(() => {
+    const years = new Set<number>()
+    clearanceRecords.forEach((record) => {
+      if (!record.date) return
+      const date = new Date(record.date as string)
+      if (Number.isNaN(date.getTime())) return
+      years.add(date.getFullYear())
+    })
+    return Array.from(years).sort((a, b) => b - a)
+  }, [clearanceRecords])
+
+  useEffect(() => {
+    if (clearanceRecordYears.length === 0) {
+      if (clearanceRecordYear !== null) setClearanceRecordYear(null)
+      return
+    }
+    if (!clearanceRecordYear || !clearanceRecordYears.includes(clearanceRecordYear)) {
+      setClearanceRecordYear(clearanceRecordYears[0])
+    }
+  }, [clearanceRecordYears, clearanceRecordYear])
+
+  useEffect(() => {
+    if (clearanceRecordRange === "monthly" && clearanceRecordMonth === null) {
+      setClearanceRecordMonth(new Date().getMonth())
+    }
+  }, [clearanceRecordRange, clearanceRecordMonth])
+
+  const filteredClearanceRecords = useMemo(() => {
+    const normalizedSearch = clearanceRecordSearch.trim().toLowerCase()
+
+    return clearanceRecords.filter((record) => {
+      if (!record.date) return false
+      const date = new Date(record.date as string)
+      if (Number.isNaN(date.getTime())) return false
+
+      const matchesYear = !clearanceRecordYear || date.getFullYear() === clearanceRecordYear
+      const matchesMonth =
+        clearanceRecordRange !== "monthly" ||
+        clearanceRecordMonth === null ||
+        date.getMonth() === clearanceRecordMonth
+
+      let matchesSearch = true
+      if (normalizedSearch) {
+        const haystack = [record.fullName, record.address, record.phone]
+          .filter(Boolean)
+          .map((value) => value.toLowerCase())
+        matchesSearch = haystack.some((value) => value.includes(normalizedSearch))
+      }
+
+      return matchesYear && matchesMonth && matchesSearch
+    })
+  }, [
+    clearanceRecords,
+    clearanceRecordYear,
+    clearanceRecordRange,
+    clearanceRecordMonth,
+    clearanceRecordSearch,
+  ])
+
+  const clearanceRecordsLoading = clientsLoading || clearanceApplicantsLoading
+
+  const selectedClearanceFile = useMemo(() => {
+    if (!clearanceRecordYear) return null
+    const byYear = clearanceFiles.filter((file) => {
+      const fileYear = getClearanceFileYear(file)
+      return fileYear === clearanceRecordYear
+    })
+    if (byYear.length === 0) return null
+    return byYear.sort((a, b) => b.createdAt - a.createdAt)[0]
+  }, [clearanceFiles, clearanceRecordYear])
+
+  const handleDownloadSavedClearance = async () => {
+    if (!clearanceRecordYear) {
+      toast.error("Select a year to download the clearance file.")
+      return
+    }
+
+    if (clearanceFilesLoading) {
+      toast.error("Clearance files are still loading. Please try again.")
+      return
+    }
+
+    try {
+      if (!selectedClearanceFile) {
+        const generated = await generateAndSaveClearanceFileRef.current?.(clearanceRecordYear)
+        if (!generated) {
+          toast.error(`No saved clearance file found for ${clearanceRecordYear}.`)
+          return
+        }
+        const blob = base64ToBlob(generated.base64)
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = generated.fileName
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        URL.revokeObjectURL(url)
+        return
+      }
+
+      const blob = base64ToBlob(selectedClearanceFile.dataBase64)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `Mayor's Clearance ${clearanceRecordYear}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error("Failed to download saved clearance file", err)
+      toast.error("Unable to download that file.")
+    }
+  }
+
+  const resolveBusinessMatchForClearance = (record: ClearanceApplicationRecord): BusinessApplicationRecord | null => {
+    const uid = record.applicantUid
+    if (uid) {
+      const byUid = clients.find((c) => (c as any)?.applicantUid === uid || (c.form as any)?.applicantUid === uid)
+      if (byUid) return byUid
+    }
+
+    const normalizedName = (record.applicantName || "").toLowerCase()
+    if (normalizedName) {
+      const byName = clients.find((c) => (c.applicantName || "").toLowerCase() === normalizedName)
+      if (byName) return byName
+    }
+
+    return null
+  }
+
+  const buildBarangayDocuments = (
+    record: ClearanceApplicationRecord,
+    overrideRequirements?: BusinessRequirement[] | null
+  ) => {
+    const requirementsSource = Array.isArray(overrideRequirements)
+      ? overrideRequirements
+      : Array.isArray(record.requirements)
+        ? record.requirements
+        : []
+
+    if (requirementsSource.length === 0) return null
+
+    const barangayReq = requirementsSource.find((req) => req.name.toLowerCase().includes("barangay"))
+    const targetReq = barangayReq ?? requirementsSource.find((req) => (req.files || []).length > 0)
+    if (!targetReq) return null
+
+    const files = Array.isArray(targetReq.files) ? [...targetReq.files] : []
+    if (files.length === 0) return null
+
+    const docs: BarangayDocumentItem[] = files.map((file) => ({ requirement: targetReq, file }))
+    return { requirement: targetReq, documents: docs }
+  }
+
+  const barangayActiveDocument = useMemo(() => {
+    if (barangaySelectedDocIndex < 0 || barangaySelectedDocIndex >= barangayDocuments.length) return null
+    return barangayDocuments[barangaySelectedDocIndex]
+  }, [barangayDocuments, barangaySelectedDocIndex])
+
+  const handleBarangayImageLoaded = (fileId: string) => {
+    setBarangayLoadingFiles((prev) => {
+      const next = new Set(prev)
+      next.delete(fileId)
+      if (next.size === 0) {
+        setBarangayImageLoading(false)
+      }
+      return next
+    })
+  }
+
+  const goToPrevBarangayDoc = (e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    if (barangayDocuments.length === 0) return
+    setBarangayImageLoading(true)
+    const prevIndex = barangaySelectedDocIndex <= 0 ? barangayDocuments.length - 1 : barangaySelectedDocIndex - 1
+    setBarangaySelectedDocIndex(prevIndex)
+  }
+
+  const goToNextBarangayDoc = (e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    if (barangayDocuments.length === 0) return
+    setBarangayImageLoading(true)
+    const nextIndex = barangaySelectedDocIndex >= barangayDocuments.length - 1 ? 0 : barangaySelectedDocIndex + 1
+    setBarangaySelectedDocIndex(nextIndex)
+  }
+
+  const handleOpenBarangayClearance = (record: ClearanceApplicationRecord) => {
+    const normalizedPurpose = (record.purpose || "").toLowerCase()
+    const isBusinessPurpose = normalizedPurpose.includes("business")
+
+    const businessMatch = isBusinessPurpose ? resolveBusinessMatchForClearance(record) : null
+    const built = buildBarangayDocuments(record, businessMatch?.requirements)
+    if (!built) {
+      toast.error("No Barangay Clearance file available for this application.")
+      return
+    }
+
+    setBarangayPreview({
+      record,
+      url: built.documents[0].file.downloadUrl ?? "",
+      requirementName: built.requirement.name,
+      fileId: built.documents[0].file.id,
+    })
+    setBarangayDocuments(built.documents)
+    setBarangaySelectedDocIndex(0)
+    setBarangayImageLoading(true)
+    setBarangayLoadingFiles(new Set(built.documents.map((doc) => doc.file.id)))
+  }
+
+  const handleBarangayApprove = async () => {
+    if (!barangayPreview) return
+    const { record, requirementName } = barangayPreview
+    const activeDoc = barangayActiveDocument
+    const fileId = activeDoc?.file.id
+    if (!record.applicantUid) {
+      toast.error("Missing applicant information for this application.")
+      return
+    }
+    if (!fileId) {
+      toast.error("No file selected.")
+      return
+    }
+
+    setIsBarangayActionLoading(true)
+    try {
+      const fileRef = ref(
+        realtimeDb,
+        `${MAYORS_CLEARANCE_APPLICATION_PATH}/${record.applicantUid}/${record.id}/requirements/${requirementName}/files/${fileId}`
+      )
+
+      await update(fileRef, { status: "approved", adminNote: "" })
+      toast.success("Barangay clearance approved.")
+      setBarangayPreview(null)
+      setBarangaySelectedDocIndex(-1)
+      setBarangayDocuments([])
+    } catch (err) {
+      console.error("Failed to update barangay clearance status", err)
+      toast.error("Unable to mark as approved.")
+    } finally {
+      setIsBarangayActionLoading(false)
+    }
+  }
+
+  const handleBarangayRejectConfirm = async () => {
+    if (!barangayPreview) return
+    const { record, requirementName } = barangayPreview
+    const activeDoc = barangayActiveDocument
+    const fileId = activeDoc?.file.id
+    if (!record.applicantUid) {
+      toast.error("Missing applicant information for this application.")
+      return
+    }
+    if (!fileId) {
+      toast.error("No file selected.")
+      return
+    }
+    if (!barangayRejectReason.trim()) {
+      toast.error("Please enter a rejection reason.")
+      return
+    }
+
+    setIsBarangayActionLoading(true)
+    try {
+      const fileRef = ref(
+        realtimeDb,
+        `${MAYORS_CLEARANCE_APPLICATION_PATH}/${record.applicantUid}/${record.id}/requirements/${requirementName}/files/${fileId}`
+      )
+
+      await update(fileRef, { status: "rejected", adminNote: barangayRejectReason.trim() })
+      toast.success("Barangay clearance rejected.")
+      setShowBarangayRejectModal(false)
+      setBarangayRejectReason("")
+      setBarangayPreview(null)
+      setBarangaySelectedDocIndex(-1)
+      setBarangayDocuments([])
+    } catch (err) {
+      console.error("Failed to update barangay clearance status", err)
+      toast.error("Unable to mark as rejected.")
+    } finally {
+      setIsBarangayActionLoading(false)
+    }
+  }
+
+  const approvedBusinessClearanceCandidates = useMemo<ClearanceApplicationRecord[]>(() => {
+    return clients
+      .filter((client) => {
+        const normalized = (client.overallStatus || client.status || "").toLowerCase()
+        return (
+          normalized.includes("approve") ||
+          normalized.includes("complete") ||
+          normalized.includes("process")
+        )
+      })
+      .map((client) => ({
+        id: `business-${client.id}`,
+        applicantName: client.applicantName || client.businessName || "Unnamed Applicant",
+        applicationDate: client.applicationDate ?? client.approvedAt ?? client.submittedAt,
+        purpose: "Business",
+        status: "Approved",
+        overallStatus: "Approved",
+        submittedAt: client.approvedAt ?? client.submittedAt,
+        requirements: [],
+        form: client.form,
+      }))
+  }, [clients])
 
   const handleNotificationNavigate = useCallback(
     (item: NotificationEvent) => {
@@ -531,17 +1050,20 @@ export default function HomePage() {
   // are applied immediately.
   const refreshLatestClientTs = useCallback(async () => {
     try {
-      const snapshot = await get(ref(realtimeDb, BUSINESS_APPLICATION_PATH))
-      const node = snapshot.exists() ? (snapshot.val() as Record<string, any>) : {}
-      const computedLastMap: Record<string, number> = {}
-      for (const [id, payload] of Object.entries(node)) {
-        try {
-          const lastClientTs = getLatestClientMessageTimestamp(payload)
-          if (lastClientTs === undefined) continue
-          computedLastMap[id] = lastClientTs
-        } catch {}
+      const [businessSnap, clearanceSnap] = await Promise.all([
+        get(ref(realtimeDb, BUSINESS_APPLICATION_PATH)),
+        get(ref(realtimeDb, MAYORS_CLEARANCE_APPLICATION_PATH)),
+      ])
+
+      const businessNode = businessSnap.exists() ? (businessSnap.val() as Record<string, any>) : {}
+      const clearanceNode = clearanceSnap.exists() ? (clearanceSnap.val() as Record<string, any>) : {}
+
+      const nextMap: Record<string, number> = {
+        ...buildBusinessLatestClientTsMap(businessNode),
+        ...buildClearanceLatestClientTsMap(clearanceNode),
       }
-      setLatestClientTsMap(computedLastMap)
+
+      setLatestClientTsMap(nextMap)
     } catch (err) {
       // non-fatal
     }
@@ -760,8 +1282,6 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!isLoggedIn) {
-      setMessengerLastReadMap({})
-      setIsMessengerLastReadLoaded(false)
       setClients([])
       setClientsError(null)
       setClientsLoading(false)
@@ -784,6 +1304,48 @@ export default function HomePage() {
         const raw = snapshot.val() as Record<string, any>
         const parsed = Object.entries(raw).map(([id, payload]) => normalizeBusinessApplication(id, payload))
 
+        // Realtime detection: if a previously rejected requirement file changes, mark it as updated and bump uploadedAt
+        try {
+          const prevMap = previousRequirementFilesRef.current
+          const updates: Record<string, any> = {}
+          let hasReplacement = false
+
+          parsed.forEach((record) => {
+            record.requirements.forEach((req) => {
+              req.files.forEach((file) => {
+                const key = `${record.id}::${req.name}::${file.id}`
+                const prev = prevMap.get(key)
+                const fileName = file.fileName ?? ""
+                const fileSize = file.fileSize ?? 0
+                const fileHash = file.fileHash ?? ""
+                const normalizedStatus = (file.status ?? "").toLowerCase()
+
+                if (
+                  prev &&
+                  prev.status === "rejected" &&
+                  (normalizedStatus !== "rejected" || fileHash !== prev.fileHash || fileSize !== prev.fileSize || fileName !== prev.fileName)
+                ) {
+                  const basePath = `${BUSINESS_APPLICATION_PATH}/${record.id}/requirements/${req.name}/files/${file.id}`
+                  updates[`${basePath}/status`] = "updated"
+                  updates[`${basePath}/uploadedAt`] = Date.now()
+                  updates[`${BUSINESS_APPLICATION_PATH}/${record.id}/status`] = "Pending Update Review"
+                  hasReplacement = true
+                }
+
+                prevMap.set(key, { fileName, fileSize, fileHash, status: normalizedStatus })
+              })
+            })
+          })
+
+          if (hasReplacement) {
+            update(ref(realtimeDb), updates).catch((err) => {
+              console.error("Failed to auto-mark replaced requirement as updated (home)", err)
+            })
+          }
+        } catch (autoErr) {
+          console.error("Realtime replacement detection failed", autoErr)
+        }
+
         // Exclude clients that have no uploaded requirement files
         const withUploadedRequirements = parsed.filter((rec) =>
           rec.requirements.some((req) => req.files.length > 0)
@@ -801,6 +1363,66 @@ export default function HomePage() {
     )
 
     return () => unsubscribe()
+  }, [isLoggedIn])
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setClearanceApplicants([])
+      setClearanceApplicantsError(null)
+      setClearanceApplicantsLoading(false)
+      return
+    }
+
+    setClearanceApplicantsLoading(true)
+    setClearanceApplicantsError(null)
+
+    const clearanceAppRef = ref(realtimeDb, MAYORS_CLEARANCE_APPLICATION_PATH)
+    const unsub = onValue(
+      clearanceAppRef,
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setClearanceApplicants([])
+          setClearanceApplicantsLoading(false)
+          return
+        }
+
+        const node = snapshot.val() as Record<string, Record<string, any>>
+        const rows: ClearanceApplicationRecord[] = []
+
+        Object.entries(node).forEach(([applicantUid, applications]) => {
+          if (!applications || typeof applications !== "object") {
+            return
+          }
+
+          Object.entries(applications).forEach(([applicationId, payload]) => {
+            if (!payload || typeof payload !== "object") {
+              return
+            }
+
+            const normalizedPayload = {
+              ...payload,
+              meta: { applicantUid, ...(payload.meta ?? {}) },
+            }
+
+            rows.push(normalizeClearanceApplicant(applicationId, normalizedPayload))
+          })
+        })
+
+        rows.sort((a, b) => (a.submittedAt ?? Number.MAX_SAFE_INTEGER) - (b.submittedAt ?? Number.MAX_SAFE_INTEGER))
+        setClearanceApplicants(rows)
+        setClearanceApplicantsLoading(false)
+      },
+      (error) => {
+        console.error("Failed to load Mayor's Clearance applications", error)
+        setClearanceApplicantsError("Unable to load Mayor's Clearance applications right now. Please try again later.")
+        setClearanceApplicants([])
+        setClearanceApplicantsLoading(false)
+      }
+    )
+
+    return () => {
+      try { unsub() } catch {}
+    }
   }, [isLoggedIn])
 
   // Load messenger last-read map from localStorage on mount so unread
@@ -869,14 +1491,14 @@ export default function HomePage() {
     if (approvedClients.length === 0) return
 
     const currentYear = new Date().getFullYear()
-    const hasCurrentYearFile = clearanceFiles.some((f) => (f.fileName || "").includes(String(currentYear)))
+    const hasCurrentYearFile = clearanceFiles.some((file) => getClearanceFileYear(file) === currentYear)
     if (hasCurrentYearFile) {
       setClearanceAutoAttempted(true)
       return
     }
 
     generateAndSaveClearanceFileRef.current
-      ? generateAndSaveClearanceFileRef.current()
+      ? generateAndSaveClearanceFileRef.current(currentYear)
           .catch((err) => {
             console.error("Auto-generate clearance file failed", err)
           })
@@ -892,43 +1514,36 @@ export default function HomePage() {
     if (clientsLoading) return
     if (isClearanceGenerating) return
 
-    const fingerprint = approvedClients
+    const targetYear = clearanceRecordYear ?? new Date().getFullYear()
+    const approvalsKey = approvedClients
       .map((c) => `${c.id}:${(c.overallStatus || c.status || "").toLowerCase()}`)
       .sort()
       .join("|")
+    const clearanceKey = approvedClearanceApplicants
+      .map((c) => `${c.id}:${(c.overallStatus || c.status || "").toLowerCase()}`)
+      .sort()
+      .join("|")
+    const fingerprint = `${targetYear}::${approvalsKey}::${clearanceKey}`
 
     if (approvedSnapshotRef.current === fingerprint) return
     approvedSnapshotRef.current = fingerprint
 
     if (approvedClients.length === 0) {
-      // If there are no approved clients, clear any saved files to keep state
-      // consistent with the current approvals.
-      setIsClearanceGenerating(true)
-      ;(async () => {
-        try {
-          await clearClearanceFiles()
-        } catch (err) {
-          console.error("Failed to clear clearance files on approvedClients change", err)
-        } finally {
-          setIsClearanceGenerating(false)
-        }
-      })()
       return
     }
 
-    // Regenerate the clearance file to reflect the latest approved clients.
+    // Regenerate the selected-year clearance file to reflect the latest approved clients.
     setIsClearanceGenerating(true)
     ;(async () => {
       try {
-        await clearClearanceFiles()
-        await generateAndSaveClearanceFileRef.current?.()
+        await generateAndSaveClearanceFileRef.current?.(targetYear)
       } catch (err) {
         console.error("Auto-regenerate clearance file failed", err)
       } finally {
         setIsClearanceGenerating(false)
       }
     })()
-  }, [approvedClients, isLoggedIn, clientsLoading, isClearanceGenerating])
+  }, [approvedClients, approvedClearanceApplicants, clearanceRecordYear, isLoggedIn, clientsLoading, isClearanceGenerating])
 
   // Recompute global unread indicator whenever relevant state changes.
   useEffect(() => {
@@ -987,25 +1602,40 @@ export default function HomePage() {
       return
     }
 
+    let businessMap: Record<string, number> = {}
+    let clearanceMap: Record<string, number> = {}
+
+    const recompute = () => {
+      setLatestClientTsMap({ ...businessMap, ...clearanceMap })
+    }
+
     const businessRef = ref(realtimeDb, BUSINESS_APPLICATION_PATH)
-    const unsub = onValue(businessRef, (snapshot) => {
-      const node = snapshot.val() || {}
-      const computedLastMap: Record<string, number> = {}
+    const businessUnsub = onValue(businessRef, (snapshot) => {
       try {
-        for (const [id, payload] of Object.entries(node)) {
-          try {
-            const lastClientTs = getLatestClientMessageTimestamp(payload)
-            if (lastClientTs === undefined) continue
-            computedLastMap[id] = lastClientTs
-          } catch {}
-        }
-        setLatestClientTsMap(computedLastMap)
-      } catch {}
+        const node = snapshot.val() || {}
+        businessMap = buildBusinessLatestClientTsMap(node)
+      } catch {
+        businessMap = {}
+      }
+      recompute()
+    })
+
+    const clearanceRef = ref(realtimeDb, MAYORS_CLEARANCE_APPLICATION_PATH)
+    const clearanceUnsub = onValue(clearanceRef, (snapshot) => {
+      try {
+        const node = snapshot.val() || {}
+        clearanceMap = buildClearanceLatestClientTsMap(node)
+      } catch {
+        clearanceMap = {}
+      }
+      recompute()
     })
 
     return () => {
-      try { if (typeof unsub === 'function') unsub() } catch {}
+      try { if (typeof businessUnsub === 'function') businessUnsub() } catch {}
+      try { if (typeof clearanceUnsub === 'function') clearanceUnsub() } catch {}
       try { off(businessRef) } catch {}
+      try { off(clearanceRef) } catch {}
     }
   }, [isLoggedIn])
 
@@ -1315,10 +1945,22 @@ export default function HomePage() {
                             }
                           }
 
+                          // Fit the image onto an 8.5 x 13 (legal short) page while preserving aspect ratio
                           const imgWidth = embedded.width || 600
                           const imgHeight = embedded.height || 800
-                          const page = pdfDoc.addPage([imgWidth, imgHeight])
-                          page.drawImage(embedded, { x: 0, y: 0, width: imgWidth, height: imgHeight })
+                          const pageWidth = 8.5 * 72 // PDF points per inch
+                          const pageHeight = 13 * 72
+                          const margin = 18 // 0.25in margin to avoid printer clipping
+                          const maxWidth = pageWidth - margin * 2
+                          const maxHeight = pageHeight - margin * 2
+                          const scale = Math.min(maxWidth / imgWidth, maxHeight / imgHeight, 1)
+                          const drawWidth = imgWidth * scale
+                          const drawHeight = imgHeight * scale
+                          const x = (pageWidth - drawWidth) / 2
+                          const y = (pageHeight - drawHeight) / 2
+
+                          const page = pdfDoc.addPage([pageWidth, pageHeight])
+                          page.drawImage(embedded, { x, y, width: drawWidth, height: drawHeight })
                           const pdfBytes = await pdfDoc.save()
                           const pdfBlob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: "application/pdf" })
                           const pdfUrl = URL.createObjectURL(pdfBlob)
@@ -1482,13 +2124,17 @@ export default function HomePage() {
     return new Blob([bytes], { type })
   }
 
-  const formatDateWithSlash = (input: string | Date | null | undefined) => {
+  const formatDateWithSlash = (input: string | number | Date | null | undefined) => {
     if (!input) return ""
 
     const toParts = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`
 
     if (input instanceof Date) {
       return toParts(input)
+    }
+
+    if (typeof input === "number" && Number.isFinite(input)) {
+      return toParts(new Date(input))
     }
 
     const normalized = String(input).trim().replace(/-/g, "/")
@@ -1501,11 +2147,46 @@ export default function HomePage() {
     return normalized
   }
 
+  function getClearanceNameParts(form: Record<string, any> | undefined) {
+    const first = (form?.firstName ?? "").toString().trim()
+    const middle = (form?.middleName ?? "").toString().trim()
+    const last = (form?.lastName ?? "").toString().trim()
+    if (first || middle || last) {
+      return { firstName: first, middleName: middle, lastName: last }
+    }
+
+    const fullName = (form?.fullName ?? form?.name ?? "").toString().trim()
+    if (!fullName) {
+      return { firstName: "", middleName: "", lastName: "" }
+    }
+
+    if (fullName.includes(",")) {
+      const [lastPart, rest] = fullName.split(",").map((part: string) => part.trim())
+      const restParts = rest ? rest.split(/\s+/).filter(Boolean) : []
+      return {
+        firstName: restParts[0] ?? "",
+        middleName: restParts.slice(1).join(" "),
+        lastName: lastPart ?? "",
+      }
+    }
+
+    const parts = fullName.split(/\s+/).filter(Boolean)
+    if (parts.length === 1) {
+      return { firstName: parts[0], middleName: "", lastName: "" }
+    }
+
+    return {
+      firstName: parts[0] ?? "",
+      middleName: parts.slice(1, -1).join(" "),
+      lastName: parts[parts.length - 1] ?? "",
+    }
+  }
+
   const extractBarangayOnly = (raw: string | null | undefined) => {
     if (!raw) return ""
     const firstSegment = raw
       .split(/[,\n;]/)
-      .map((part) => part.trim())
+      .map((part: string) => part.trim())
       .find(Boolean)
 
     const base = (firstSegment || raw).trim()
@@ -1515,6 +2196,24 @@ export default function HomePage() {
       .trim()
 
     return cleaned || base
+  }
+
+  function formatClearanceAddress(form: Record<string, any> | undefined) {
+    const address = form?.address
+    if (address && typeof address === "object") {
+      const parts = [address.barangay, address.municipality, address.province]
+        .map((part) => (part ?? "").toString().trim())
+        .filter(Boolean)
+      if (parts.length > 0) return parts.join(", ")
+    }
+
+    const raw =
+      form?.businessAddress ??
+      form?.ownerAddress ??
+      form?.address ??
+      ""
+
+    return raw ? String(raw).trim() : ""
   }
 
   const fetchClearanceTemplate = async () => {
@@ -1527,14 +2226,13 @@ export default function HomePage() {
 
   const handleRefreshClearance = async () => {
     if (isClearanceGenerating) return
-    if (approvedClients.length === 0) {
-      toast.error("No approved clients available for Mayor's Clearance.")
+    if (approvedClearanceApplicants.length === 0 && approvedClients.length === 0) {
       return
     }
     setIsClearanceGenerating(true)
     try {
-      await clearClearanceFiles()
-      await generateAndSaveClearanceFileRef.current?.()
+      const targetYear = clearanceRecordYear ?? new Date().getFullYear()
+      await generateAndSaveClearanceFileRef.current?.(targetYear)
       toast.success("Mayor's Clearance has been refreshed.")
     } catch (err) {
       console.error("Failed to refresh Mayor's Clearance", err)
@@ -1544,15 +2242,14 @@ export default function HomePage() {
     }
   }
 
-  const generateAndSaveClearanceFile = useCallback(async () => {
+  const generateAndSaveClearanceFile = useCallback(async (targetYear?: number) => {
     const today = new Date()
-    const year = today.getFullYear()
+    const year = targetYear ?? today.getFullYear()
     const todayLabel = formatDateWithSlash(today)
     let templateBuffer: ArrayBuffer | null = null
 
-    if (approvedClients.length === 0) {
-      toast.error("No approved clients available for Mayor's Clearance.")
-      return
+    if (approvedClearanceApplicants.length === 0 && approvedClients.length === 0) {
+      return null
     }
 
     try {
@@ -1560,12 +2257,12 @@ export default function HomePage() {
     } catch (err) {
       console.error("Failed to load Mayor's Clearance template", err)
       toast.error("Unable to load the Mayor's Clearance template. Please try again.")
-      return
+      return null
     }
 
     if (!templateBuffer) {
       toast.error("Mayor's Clearance template could not be loaded.")
-      return
+      return null
     }
 
     const workbook = new ExcelJS.Workbook()
@@ -1574,13 +2271,13 @@ export default function HomePage() {
     } catch (err) {
       console.error("Failed to parse Mayor's Clearance template", err)
       toast.error("Mayor's Clearance template is corrupted. Please refresh and try again.")
-      return
+      return null
     }
     const sheet = workbook.worksheets[0] ?? workbook.getWorksheet(1)
 
     if (!sheet) {
       toast.error("Mayor's Clearance template is missing a worksheet.")
-      return
+      return null
     }
 
     // Keep the template header intact (yellow styling) and clear any existing data rows.
@@ -1589,21 +2286,62 @@ export default function HomePage() {
       sheet.spliceRows(headerRowIndex + 1, sheet.rowCount - headerRowIndex)
     }
 
-    const dataRows = approvedClients.map((client, index) => {
-      const form = client.form || {}
-      const middleName = String(form.middleName ?? "").trim()
+    const clearanceRows = approvedClearanceApplicants.flatMap((record) => {
+      const form = record.form || {}
+      const { firstName, middleName, lastName } = getClearanceNameParts(form)
       const middleInitial = middleName ? `${middleName.charAt(0).toUpperCase()}.` : ""
-      const barangay = extractBarangayOnly(form.barangay ?? form.businessAddress ?? "")
-      const applicationDate = formatDateWithSlash(form.dateOfApplication ?? form.registrationDate ?? "")
+      const barangay = extractBarangayOnly(form?.address?.barangay ?? form.barangay ?? "")
+      const dateValue = record.applicationDate ?? record.submittedAt ?? ""
+      const recordYear = getYearFromDateValue(dateValue)
+      if (targetYear && recordYear !== targetYear) {
+        return []
+      }
+      const applicationDate = formatDateWithSlash(dateValue)
+      const purpose = record.purpose || "Mayor's Clearance"
 
-      return [
-        index + 1,
+      return [[
         todayLabel,
         applicationDate,
-        form.firstName ?? "",
+        firstName,
         middleName,
         middleInitial,
-        form.lastName ?? "",
+        lastName,
+        barangay,
+        "Sabangan, Mountain Province",
+        "",
+        "",
+        "",
+        purpose,
+        "",
+        "",
+      ]]
+    })
+
+    const businessRows = approvedClients.flatMap((client) => {
+      const form = client.form || {}
+      const { firstName, middleName, lastName } = getClearanceNameParts(form)
+      const middleInitial = middleName ? `${middleName.charAt(0).toUpperCase()}.` : ""
+      const barangay = extractBarangayOnly(form.barangay ?? form.businessAddress ?? "")
+      const dateValue =
+        form.dateOfApplication ??
+          form.registrationDate ??
+          client.applicationDate ??
+          client.approvedAt ??
+          client.submittedAt ??
+          ""
+      const recordYear = getYearFromDateValue(dateValue)
+      if (targetYear && recordYear !== targetYear) {
+        return []
+      }
+      const applicationDate = formatDateWithSlash(dateValue)
+
+      return [[
+        todayLabel,
+        applicationDate,
+        firstName,
+        middleName,
+        middleInitial,
+        lastName,
         barangay,
         "Sabangan, Mountain Province",
         "",
@@ -1612,11 +2350,16 @@ export default function HomePage() {
         "Securing Business Permit",
         "",
         "",
-      ]
+      ]]
     })
 
-    if (dataRows.length > 0) {
-      sheet.addRows(dataRows)
+    const combinedRows = [...clearanceRows, ...businessRows].map((row, index) => [index + 1, ...row])
+
+    if (combinedRows.length > 0) {
+      sheet.addRows(combinedRows)
+    } else {
+      toast.error(`No approved records found for ${year}.`)
+      return null
     }
 
     const buffer = await workbook.xlsx.writeBuffer()
@@ -1627,11 +2370,12 @@ export default function HomePage() {
     await saveClearanceFile({
       fileName,
       createdAt: Date.now(),
-      rowCount: approvedClients.length,
+      rowCount: combinedRows.length,
       dataBase64: base64,
       createdBy: user?.uid ?? null,
     })
-  }, [approvedClients, fetchClearanceTemplate, arrayBufferToBase64, formatDateWithSlash, extractBarangayOnly, saveClearanceFile, firebaseAuth])
+    return { fileName, base64 }
+  }, [approvedClearanceApplicants, approvedClients, fetchClearanceTemplate, arrayBufferToBase64, formatDateWithSlash, extractBarangayOnly, saveClearanceFile, firebaseAuth, getClearanceNameParts])
 
   useEffect(() => {
     generateAndSaveClearanceFileRef.current = generateAndSaveClearanceFile
@@ -1640,18 +2384,24 @@ export default function HomePage() {
   const normalizedClientSearch = searchQuery.trim().toLowerCase()
   const filteredClients = clients
     .filter((client) => {
-      const matchesType = typeFilter === "All" || client.applicationType === typeFilter
+      const matchesType = (() => {
+        if (typeFilter === "All") return true
+        const norm = ((client.overallStatus ?? client.status ?? "") as string).toLowerCase()
+        if (typeFilter === "Approved") {
+          return norm.includes("approve") || norm.includes("complete") || norm.includes("process")
+        }
+        if (typeFilter === "Pending") {
+          return norm === "" || norm.includes("pending") || norm.includes("review") || norm.includes("updated")
+        }
+        return true
+      })()
       const haystack = [client.applicantName, client.businessName]
         .filter(Boolean)
         .map((value) => value.toLowerCase())
       const matchesSearch = !normalizedClientSearch || haystack.some((value) => value.includes(normalizedClientSearch))
       const matchesDate = (() => {
-        if (!applicationDateFilter) {
-          return true
-        }
-        if (!client.applicationDate) {
-          return false
-        }
+        if (!applicationDateFilter) return true
+        if (!client.applicationDate) return false
         const date = new Date(client.applicationDate)
         return !Number.isNaN(date.getTime()) && date.toDateString() === applicationDateFilter.toDateString()
       })()
@@ -1665,22 +2415,56 @@ export default function HomePage() {
       return 0
     })
 
-  const handleDownloadSavedClearance = (record: ClearanceFileWithId) => {
-    try {
-      const blob = base64ToBlob(record.dataBase64)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = record.fileName || "Mayor's Clearance.xlsx"
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
-    } catch (err) {
-      console.error("Failed to download saved clearance file", err)
-      toast.error("Unable to download that file.")
-    }
-  }
+  const combinedClearanceApplicants = useMemo(
+    () => [...clearanceApplicants, ...approvedBusinessClearanceCandidates],
+    [clearanceApplicants, approvedBusinessClearanceCandidates]
+  )
+
+  const normalizedClearanceSearch = clearanceApplicantsSearch.trim().toLowerCase()
+  const filteredClearanceApplicants = useMemo(() => {
+    return combinedClearanceApplicants
+      .filter((record) => {
+        const normalizedStatus = (record.overallStatus || record.status || "").toLowerCase()
+        const matchesStatus = (() => {
+          if (clearanceApplicantsStatus === "All") return true
+          if (clearanceApplicantsStatus === "Approved") {
+            return (
+              normalizedStatus.includes("approve") ||
+              normalizedStatus.includes("complete") ||
+              normalizedStatus.includes("process")
+            )
+          }
+          if (clearanceApplicantsStatus === "Rejected") {
+            return normalizedStatus.includes("reject") || normalizedStatus.includes("incomplete")
+          }
+          return (
+            normalizedStatus === "" ||
+            normalizedStatus.includes("pending") ||
+            normalizedStatus.includes("review") ||
+            normalizedStatus.includes("process")
+          )
+        })()
+
+        const haystack = [record.applicantName, record.purpose]
+          .filter((value): value is string => Boolean(value))
+          .map((value) => value.toLowerCase())
+        const matchesSearch =
+          !normalizedClearanceSearch || haystack.some((value) => value.includes(normalizedClearanceSearch))
+
+        const matchesDate = (() => {
+          if (!clearanceApplicationDateFilter) return true
+          const raw = record.applicationDate ?? record.submittedAt
+          if (!raw) return false
+          const date = new Date(raw as string)
+          return !Number.isNaN(date.getTime()) && date.toDateString() === clearanceApplicationDateFilter.toDateString()
+        })()
+
+        return matchesStatus && matchesSearch && matchesDate
+      })
+      .sort((a, b) => {
+        return (a.submittedAt ?? Number.MAX_SAFE_INTEGER) - (b.submittedAt ?? Number.MAX_SAFE_INTEGER)
+      })
+  }, [combinedClearanceApplicants, clearanceApplicantsStatus, normalizedClearanceSearch, clearanceApplicationDateFilter])
 
   const renderWithSidebar = (content: ReactNode) => (
     <div className="min-h-screen flex bg-background">
@@ -1708,28 +2492,28 @@ export default function HomePage() {
                 type="button"
                 onClick={handleNavClick}
                 className={cn(
-                  "w-full relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition",
+                  "w-full relative flex items-center gap-3 rounded-md py-2 text-base font-medium transition",
+                  "px-3",
                   isActive
                     ? "bg-primary text-primary-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
                 )}
               >
                 <Icon className="h-4 w-4" />
-                <span className="relative inline-flex items-center">
+                <span className="relative inline-flex items-center flex-1 text-left whitespace-normal">
                   {item.label}
                   {showHomeDot && (
                     <span className="absolute -right-3 -top-1 h-2.5 w-2.5 rounded-full bg-red-500" aria-hidden />
                   )}
                 </span>
-                
               </button>
             )
           })}
         </nav>
         <div className="p-4">
           <Button
-            variant="outline"
-            className="w-full justify-center gap-2"
+            variant="destructive"
+            className="w-full justify-center gap-2 hover:shadow-lg hover:scale-105 transition-all duration-200"
             onClick={handleLogout}
           >
             <LogOut className="h-4 w-4" />
@@ -1757,12 +2541,12 @@ export default function HomePage() {
                 type="button"
                 onClick={handleNavClick}
                 className={cn(
-                  "relative flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium whitespace-nowrap",
+                  "relative flex items-center gap-2 rounded-full px-3 py-1.5 text-base font-medium whitespace-nowrap",
                   isActive ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
                 )}
               >
                 <Icon className="h-4 w-4" />
-                <span className="relative inline-flex items-center">
+                <span className="relative inline-flex items-center flex-1 text-left whitespace-normal">
                   {item.label}
                   {showHomeDot && (
                     <span className="absolute -right-3 -top-1 h-2.5 w-2.5 rounded-full bg-red-500" aria-hidden />
@@ -1801,10 +2585,114 @@ export default function HomePage() {
 
     return renderWithSidebar(
       <>
-        <main className="flex-1 p-6 max-w-4xl w-full">
-          <h1 className="text-3xl font-bold text-foreground mb-8">Welcome to BOSS</h1>
+        <main className="flex-1 p-6 mt-28 max-w-4xl w-full relative">
+          {/* Background decorative elements */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className="absolute -top-10 -right-10 w-32 h-32 bg-primary/5 rounded-full blur-3xl"></div>
+            <div className="absolute top-1/2 -left-10 w-24 h-24 bg-blue-500/5 rounded-full blur-2xl"></div>
+            <div className="absolute -bottom-10 right-1/4 w-20 h-20 bg-green-500/5 rounded-full blur-xl"></div>
+          </div>
+
+          <div className="flex flex-col items-center mb-16 relative z-10">
+            {/* Animated background glow */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-64 h-64 bg-gradient-to-r from-primary/20 via-blue-500/10 to-primary/20 rounded-full blur-3xl animate-pulse"></div>
+            </div>
+
+            {/* Welcome text with gradient effect */}
+            <div className="text-center mb-6 relative">
+              <h1 className="text-5xl md:text-6xl font-black text-foreground mb-3 tracking-tight">
+                Welcome to BOSS
+              </h1>
+              <div className="h-1 w-24 bg-gradient-to-r from-transparent via-primary to-transparent mx-auto rounded-full"></div>
+            </div>
+
+            {/* Subtitle with elegant styling */}
+            <div className="relative">
+              <p className="text-xl md:text-2xl font-semibold text-muted-foreground/90 tracking-wide relative z-10 px-6 py-2 rounded-full bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm border border-white/20 dark:border-gray-700/20 shadow-lg">
+                Business One Stop Shop
+              </p>
+              {/* Subtle shadow effect */}
+              <div className="absolute inset-0 rounded-full bg-gradient-to-r from-primary/10 to-blue-500/10 blur-xl -z-10"></div>
+            </div>
+
+            {/* Decorative elements */}
+            <div className="flex items-center gap-4 mt-8">
+              <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0s'}}></div>
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+              <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.4s'}}></div>
+            </div>
+          </div>
           
-          <div className="bg-card border border-border rounded-lg p-6 md:fixed md:right-6 md:top-20 md:w-96 md:max-h-[80vh] md:overflow-auto z-50">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 relative z-10 max-w-3xl mx-auto">
+            <div className="group relative overflow-hidden bg-gradient-to-br from-blue-50 via-blue-100 to-indigo-100 dark:from-blue-950/50 dark:via-blue-900/50 dark:to-indigo-900/50 border border-blue-200/50 dark:border-blue-800/50 rounded-2xl p-6 shadow-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-400/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full -translate-y-16 translate-x-16 blur-2xl group-hover:bg-blue-500/20 transition-colors duration-500"></div>
+              
+              <div className="relative z-10 flex items-center gap-4">
+                <div className="relative">
+                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-xl group-hover:shadow-2xl transition-shadow duration-500">
+                    <FileText className="h-10 w-10 text-white" />
+                  </div>
+                  <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-blue-400 rounded-full border-2 border-white dark:border-gray-900 flex items-center justify-center">
+                    <span className="text-xs font-bold text-white">📋</span>
+                  </div>
+                </div>
+                
+                <div className="flex-1">
+                  <div className="flex items-baseline gap-2 mb-1">
+                    <p className="text-4xl font-bold text-blue-900 dark:text-blue-100 group-hover:text-blue-800 dark:group-hover:text-blue-200 transition-colors duration-300">
+                      {clientsLoading ? "..." : clients.length}
+                    </p>
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                  </div>
+                  <p className="text-blue-700 dark:text-blue-300 font-semibold text-lg mb-1">Total Registrants</p>
+                  <p className="text-sm text-blue-600/80 dark:text-blue-400/80">Active business applications</p>
+                  <div className="mt-3 flex items-center gap-1">
+                    <div className="h-1 bg-blue-200 dark:bg-blue-800 rounded-full flex-1">
+                      <div className="h-1 bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-1000" 
+                           style={{width: clientsLoading ? '0%' : '100%'}}></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="group relative overflow-hidden bg-gradient-to-br from-emerald-50 via-green-100 to-teal-100 dark:from-emerald-950/50 dark:via-green-900/50 dark:to-teal-900/50 border border-emerald-200/50 dark:border-emerald-800/50 rounded-2xl p-6 shadow-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
+              <div className="absolute inset-0 bg-gradient-to-br from-emerald-400/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+              <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full -translate-y-16 translate-x-16 blur-2xl group-hover:bg-emerald-500/20 transition-colors duration-500"></div>
+              
+              <div className="relative z-10 flex items-center gap-4">
+                <div className="relative">
+                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center shadow-xl group-hover:shadow-2xl transition-shadow duration-500">
+                    <Check className="h-10 w-10 text-white" />
+                  </div>
+                  <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-emerald-400 rounded-full border-2 border-white dark:border-gray-900 flex items-center justify-center">
+                    <span className="text-xs font-bold text-white">✅</span>
+                  </div>
+                </div>
+                
+                <div className="flex-1">
+                  <div className="flex items-baseline gap-2 mb-1">
+                    <p className="text-4xl font-bold text-emerald-900 dark:text-emerald-100 group-hover:text-emerald-800 dark:group-hover:text-emerald-200 transition-colors duration-300">
+                      {clientsLoading ? "..." : approvedClients.length}
+                    </p>
+                    <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                  </div>
+                  <p className="text-emerald-700 dark:text-emerald-300 font-semibold text-lg mb-1">Processed Applications</p>
+                  <p className="text-sm text-emerald-600/80 dark:text-emerald-400/80">Approved & completed</p>
+                  <div className="mt-3 flex items-center gap-1">
+                    <div className="h-1 bg-emerald-200 dark:bg-emerald-800 rounded-full flex-1">
+                      <div className="h-1 bg-gradient-to-r from-emerald-500 to-green-600 rounded-full transition-all duration-1000" 
+                           style={{width: clientsLoading ? '0%' : '100%'}}></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-card border border-border rounded-lg p-6 md:fixed md:right-6 md:top-20 md:w-96 md:max-h-[80vh] md:overflow-auto z-50 shadow-sm">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
                 <FileText className="h-5 w-5 text-primary" />
@@ -1843,52 +2731,95 @@ export default function HomePage() {
   if (isLoggedIn && effectivePage === "clients") {
     return renderWithSidebar(
       <div className="flex-1 flex flex-col p-6 max-w-6xl mx-auto w-full">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-3xl font-bold text-primary">Business Application</h2>
+        <div className="mb-8">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
+                <FileText className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-foreground">Business Application</h1>
+                <p className="text-muted-foreground">Manage business permit applications</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-2xl font-semibold text-primary">
+                {clientsLoading ? "..." : filteredClients.length}
+              </p>
+              <p className="text-sm text-muted-foreground">Active Applications</p>
+            </div>
+          </div>
         </div>
 
           
-          <div className="mb-6 relative">
-            <div className="flex items-center">
-              <div className="flex-none">
-                <Input
-                  placeholder="Search by client name..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full max-w-xs"
-                />
+          <div className="mb-6">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div className="flex flex-col md:flex-row md:items-center gap-3">
+                <div className="flex-none w-full md:w-auto">
+                  <Input
+                    placeholder="Search by client name..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full max-w-md"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant={typeFilter === "All" ? "default" : "outline"}
+                    onClick={() => setTypeFilter("All")}
+                    className={`${typeFilter === "All" ? "bg-primary hover:bg-primary/90 text-white" : ""} px-4 py-2 text-sm md:text-base`}
+                    size="lg"
+                  >
+                    All
+                  </Button>
+                  <Button
+                    variant={typeFilter === "Approved" ? "default" : "outline"}
+                    onClick={() => setTypeFilter("Approved")}
+                    className={`${typeFilter === "Approved" ? "bg-primary hover:bg-primary/90 text-white" : ""} px-4 py-2 text-sm md:text-base`}
+                    size="lg"
+                  >
+                    Approved
+                  </Button>
+                  <Button
+                    variant={typeFilter === "Pending" ? "default" : "outline"}
+                    onClick={() => setTypeFilter("Pending")}
+                    className={`${typeFilter === "Pending" ? "bg-primary hover:bg-primary/90 text-white" : ""} px-4 py-2 text-sm md:text-base`}
+                    size="lg"
+                  >
+                    Pending
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex items-center">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button size="sm" className="ml-2 px-3 py-2 flex items-center gap-2">
+                      <span>Application Date</span>
+                      <CalendarDays className="h-4 w-4" />
+                      {applicationDateFilter && (
+                        <span className="text-xs bg-white/20 px-2 py-0.5 rounded ml-2">
+                          {applicationDateFilter.toLocaleDateString()}
+                        </span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <div className="p-2 border-b">
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => setApplicationDateFilter(undefined)}
+                        className="w-full text-sm"
+                      >
+                        Clear Filter
+                      </Button>
+                    </div>
+                    <Calendar mode="single" selected={applicationDateFilter} onSelect={setApplicationDateFilter} />
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
-
-            <div className="absolute left-1/2 transform -translate-x-1/2 flex gap-2">
-              <Button
-                variant={typeFilter === "All" ? "default" : "outline"}
-                onClick={() => setTypeFilter("All")}
-                className={typeFilter === "All" ? "bg-primary hover:bg-primary/90 text-white" : ""}
-              >
-                All
-              </Button>
-              <Button
-                variant={typeFilter === "New" ? "default" : "outline"}
-                onClick={() => setTypeFilter("New")}
-                className={typeFilter === "New" ? "bg-primary hover:bg-primary/90 text-white" : ""}
-              >
-                New
-              </Button>
-              <Button
-                variant={typeFilter === "Renewal" ? "default" : "outline"}
-                onClick={() => setTypeFilter("Renewal")}
-                className={typeFilter === "Renewal" ? "bg-primary hover:bg-primary/90 text-white" : ""}
-              >
-                Renewal
-              </Button>
-            </div>
-          </div>
-
-          <div className="mb-6">
-            <p className="text-sm text-muted-foreground mb-4">
-              Total Clients: {clientsLoading ? "Loading..." : filteredClients.length}
-            </p>
           </div>
 
           {clientsError && (
@@ -1904,40 +2835,9 @@ export default function HomePage() {
                   <th className="border border-border p-3 text-center">No.</th>
                   <th className="border border-border p-3 text-center">Client Name</th>
                   <th className="border border-border p-3 text-center">Type</th>
-                  <th className="border border-border p-3 text-center">
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <button className="flex items-center justify-center gap-2 hover:opacity-80 transition-opacity w-full text-center">
-                          Application Date
-                          <CalendarDays className="h-4 w-4" />
-                          {applicationDateFilter && (
-                            <span className="text-xs bg-white/20 px-2 py-0.5 rounded">
-                              {applicationDateFilter.toLocaleDateString()}
-                            </span>
-                          )}
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <div className="p-2 border-b">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setApplicationDateFilter(undefined)}
-                            className="w-full text-sm"
-                          >
-                            Clear Filter
-                          </Button>
-                        </div>
-                        <Calendar
-                          mode="single"
-                          selected={applicationDateFilter}
-                          onSelect={setApplicationDateFilter}
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </th>
+                  <th className="border border-border p-3 text-center">Application Date</th>
                   <th className="border border-border p-3 text-center">Status</th>
-                  <th className="border border-border p-3 text-center">Application Form/Requirements</th>
+                  <th className="border border-border p-3 text-center">Approval Date</th>
                 </tr>
               </thead>
               <tbody>
@@ -1973,10 +2873,9 @@ export default function HomePage() {
                       <td className="border border-border p-3 text-center">{client.applicationType}</td>
                       <td className="border border-border p-3 text-center">
                         {(() => {
-                          if (!client.applicationDate) {
-                            return "—"
-                          }
-                          const date = new Date(client.applicationDate)
+                          const raw = client.applicationDate
+                          if (!raw) return "—"
+                          const date = new Date(raw)
                           return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString()
                         })()}
                       </td>
@@ -1991,17 +2890,14 @@ export default function HomePage() {
                         })()}
                       </td>
                       <td className="border border-border p-3 text-center">
-                        <div className="flex gap-2 justify-center">
-                          <Button
-                            size="lg"
-                            onClick={(e) => handlePrintApplicationForm(client.id, e)}
-                            className="bg-primary hover:bg-primary/90 text-white"
-                          >
-                            Preview
-                          </Button>
-                          {/* Sworn Docx button removed: sworn content is now merged into main preview */}
-                          {/* Download button removed for Business Application list */}
-                        </div>
+                        {(() => {
+                          const normalized = (client.overallStatus || client.status || "").toLowerCase()
+                          if (!normalized.includes("approve")) return "—"
+                          const ts = client.approvedAt
+                          if (!ts) return "—"
+                          const date = new Date(ts)
+                          return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString()
+                        })()}
                       </td>
                     </tr>
                   ))
@@ -2138,53 +3034,579 @@ export default function HomePage() {
     )
   }
 
+  if (isLoggedIn && effectivePage === "clearance-applications") {
+    return renderWithSidebar(
+      <div className="flex-1 flex flex-col p-6 max-w-6xl mx-auto w-full">
+        <div className="mb-8">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
+                <ClipboardList className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-foreground">Mayor&apos;s Clearance Application</h1>
+                <p className="text-muted-foreground">Track applicants requesting Mayor&apos;s Clearance</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-2xl font-semibold text-primary">
+                {clearanceApplicantsLoading ? "..." : filteredClearanceApplicants.length}
+              </p>
+              <p className="text-sm text-muted-foreground">Active Applicants</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div className="flex flex-col md:flex-row md:items-center gap-3 w-full">
+            <Input
+              placeholder="Search applicant or purpose..."
+              value={clearanceApplicantsSearch}
+              onChange={(e) => setClearanceApplicantsSearch(e.target.value)}
+              className="w-full md:w-80"
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant={clearanceApplicantsStatus === "All" ? "default" : "outline"}
+                onClick={() => setClearanceApplicantsStatus("All")}
+                className={clearanceApplicantsStatus === "All" ? "bg-primary hover:bg-primary/90 text-white" : ""}
+              >
+                All
+              </Button>
+              <Button
+                variant={clearanceApplicantsStatus === "Approved" ? "default" : "outline"}
+                onClick={() => setClearanceApplicantsStatus("Approved")}
+                className={clearanceApplicantsStatus === "Approved" ? "bg-primary hover:bg-primary/90 text-white" : ""}
+              >
+                Approved
+              </Button>
+              <Button
+                variant={clearanceApplicantsStatus === "Pending" ? "default" : "outline"}
+                onClick={() => setClearanceApplicantsStatus("Pending")}
+                className={clearanceApplicantsStatus === "Pending" ? "bg-primary hover:bg-primary/90 text-white" : ""}
+              >
+                Pending
+              </Button>
+              <Button
+                variant={clearanceApplicantsStatus === "Rejected" ? "default" : "outline"}
+                onClick={() => setClearanceApplicantsStatus("Rejected")}
+                className={clearanceApplicantsStatus === "Rejected" ? "bg-primary hover:bg-primary/90 text-white" : ""}
+              >
+                Rejected
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex items-center">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button size="sm" className="ml-2 px-3 py-2 flex items-center gap-2">
+                  <span>Application Date</span>
+                  <CalendarDays className="h-4 w-4" />
+                  {clearanceApplicationDateFilter && (
+                    <span className="text-xs bg-white/20 px-2 py-0.5 rounded ml-2">
+                      {clearanceApplicationDateFilter.toLocaleDateString()}
+                    </span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <div className="p-2 border-b">
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setClearanceApplicationDateFilter(undefined)}
+                    className="w-full text-sm"
+                  >
+                    Clear Filter
+                  </Button>
+                </div>
+                <Calendar
+                  mode="single"
+                  selected={clearanceApplicationDateFilter}
+                  onSelect={setClearanceApplicationDateFilter}
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+        </div>
+
+        {clearanceApplicantsError && (
+          <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {clearanceApplicantsError}
+          </div>
+        )}
+
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-primary text-white">
+                <th className="border border-border p-3 text-center">No.</th>
+                <th className="border border-border p-3 text-center">Applicant Name</th>
+                <th className="border border-border p-3 text-center">Purpose</th>
+                <th className="border border-border p-3 text-center">Application Date</th>
+                <th className="border border-border p-3 text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {clearanceApplicantsLoading ? (
+                <tr>
+                  <td colSpan={5} className="border border-border p-6 text-center text-muted-foreground">
+                    Loading applications...
+                  </td>
+                </tr>
+              ) : filteredClearanceApplicants.length > 0 ? (
+                filteredClearanceApplicants.map((application, index) => (
+                  <tr
+                    key={application.id}
+                    className={`${index % 2 === 0 ? "bg-background" : "bg-muted/30"} cursor-pointer hover:bg-green-200 transition-colors`}
+                    onClick={() => handleOpenBarangayClearance(application)}
+                  >
+                    <td className="border border-border p-3 text-center">{index + 1}</td>
+                    <td className="border border-border p-3 text-center font-medium">{application.applicantName}</td>
+                    <td className="border border-border p-3 text-center text-muted-foreground">
+                      {application.purpose || "—"}
+                    </td>
+                    <td className="border border-border p-3 text-center">
+                      {(() => {
+                        const raw = application.applicationDate ?? application.submittedAt
+                        if (!raw) return "—"
+                        const date = new Date(raw as string)
+                        return Number.isNaN(date.getTime()) ? raw : date.toLocaleDateString()
+                      })()}
+                    </td>
+                    <td className="border border-border p-3 text-center">
+                      {(() => {
+                        const badge = getStatusBadge(application.status, application.overallStatus)
+                        return (
+                          <span className={`px-3 py-1 rounded-full text-sm font-medium ${badge.className}`}>
+                            {badge.label}
+                          </span>
+                        )
+                      })()}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={5} className="border border-border p-3 text-center text-muted-foreground">
+                    No Mayor&apos;s Clearance applications found
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {barangayPreview && barangayActiveDocument && (
+          <div
+            className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+            onClick={() => {
+              if (isBarangayActionLoading) return
+              setBarangayPreview(null)
+              setBarangaySelectedDocIndex(-1)
+              setBarangayDocuments([])
+              setShowBarangayRejectModal(false)
+              setBarangayRejectReason("")
+            }}
+          >
+            {barangayDocuments.length > 1 && (
+              <button
+                onClick={goToPrevBarangayDoc}
+                className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/20 text-white rounded-full p-2 transition-colors z-20"
+                title="Previous document"
+              >
+                <ChevronLeft className="h-8 w-8" />
+              </button>
+            )}
+
+            {barangayDocuments.length > 1 && (
+              <button
+                onClick={goToNextBarangayDoc}
+                className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/20 text-white rounded-full p-2 transition-colors z-20"
+                title="Next document"
+              >
+                <ChevronRight className="h-8 w-8" />
+              </button>
+            )}
+
+            <div
+              className="bg-card rounded-lg max-w-[90vw] w-full max-h-[96vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="relative flex items-center justify-center px-2 py-2 border-b border-border sticky top-0 bg-card z-10">
+                <div className="text-center">
+                  <h3 className="text-lg font-semibold text-foreground">{barangayActiveDocument.requirement.name}</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Document {barangaySelectedDocIndex + 1} of {barangayDocuments.length}
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    if (isBarangayActionLoading) return
+                    setBarangayPreview(null)
+                    setBarangaySelectedDocIndex(-1)
+                    setBarangayDocuments([])
+                    setShowBarangayRejectModal(false)
+                    setBarangayRejectReason("")
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="p-0">
+                {barangayActiveDocument.requirement.files && barangayActiveDocument.requirement.files.length > 1 ? (
+                  <div className="flex flex-col gap-4 p-0 overflow-y-auto">
+                    {barangayActiveDocument.requirement.files.map((f, idx) => {
+                      const isFileLoading = barangayImageLoading || barangayLoadingFiles.has(f.id)
+                      const isPdf = (f.fileName || "").toLowerCase().endsWith(".pdf")
+                      return (
+                        <div key={f.id} className="w-full">
+                          <div className="relative w-full h-[98vh]" style={{ minHeight: "98vh" }}>
+                            {isFileLoading && (
+                              <div className="absolute inset-0 flex items-center justify-center bg-muted/50 rounded-md z-10">
+                                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                              </div>
+                            )}
+                            {isPdf ? (
+                              <iframe
+                                title={barangayActiveDocument.requirement.name}
+                                src={f.downloadUrl || ""}
+                                className={`w-full h-full border-0 ${isFileLoading ? "opacity-0" : "opacity-100"}`}
+                                onLoad={() => handleBarangayImageLoaded(f.id)}
+                              />
+                            ) : (
+                              <Image
+                                src={f.downloadUrl || "/placeholder.svg"}
+                                alt={barangayActiveDocument.requirement.name}
+                                fill
+                                sizes="(max-width: 768px) 100vw, 80vw"
+                                className={`object-contain rounded-md w-full h-full transition-opacity ${isFileLoading ? "opacity-0" : "opacity-100"}`}
+                                priority
+                                unoptimized
+                                onLoad={() => handleBarangayImageLoaded(f.id)}
+                                onError={() => handleBarangayImageLoaded(f.id)}
+                              />
+                            )}
+                          </div>
+                          {idx !== barangayActiveDocument.requirement.files.length - 1 && (
+                            <div className="h-2 bg-border w-full my-2" />
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="relative w-full h-[98vh]" style={{ minHeight: "98vh" }}>
+                    {(barangayImageLoading || barangayLoadingFiles.has(barangayActiveDocument.file.id)) && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-muted/50 rounded-md">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      </div>
+                    )}
+                    {(() => {
+                      const isPdf = (barangayActiveDocument.file.fileName || "").toLowerCase().endsWith(".pdf")
+                      if (isPdf) {
+                        return (
+                          <iframe
+                            title={barangayActiveDocument.requirement.name}
+                            src={barangayActiveDocument.file.downloadUrl || ""}
+                            className={`w-full h-full border-0 ${(barangayImageLoading || barangayLoadingFiles.has(barangayActiveDocument.file.id)) ? "opacity-0" : "opacity-100"}`}
+                            onLoad={() => handleBarangayImageLoaded(barangayActiveDocument.file.id)}
+                          />
+                        )
+                      }
+                      return (
+                        <Image
+                          src={barangayActiveDocument.file.downloadUrl || "/placeholder.svg"}
+                          alt={barangayActiveDocument.requirement.name}
+                          fill
+                          sizes="(max-width: 768px) 100vw, 80vw"
+                          className={`object-contain rounded-md w-full h-full transition-opacity ${(barangayImageLoading || barangayLoadingFiles.has(barangayActiveDocument.file.id)) ? "opacity-0" : "opacity-100"}`}
+                          priority
+                          unoptimized
+                          onLoad={() => handleBarangayImageLoaded(barangayActiveDocument.file.id)}
+                          onError={() => handleBarangayImageLoaded(barangayActiveDocument.file.id)}
+                        />
+                      )
+                    })()}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-3 p-4 border-t border-border sticky bottom-0 bg-card sm:flex-row">
+                <Button
+                  className="flex-1 bg-primary hover:bg-primary/90 text-white disabled:opacity-70"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleBarangayApprove()
+                  }}
+                  disabled={isBarangayActionLoading}
+                >
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  {isBarangayActionLoading ? "Saving..." : "Approve"}
+                </Button>
+                <Button
+                  variant="destructive"
+                  className="flex-1 disabled:opacity-70"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowBarangayRejectModal(true)
+                  }}
+                  disabled={isBarangayActionLoading}
+                >
+                  <XCircle className="h-4 w-4 mr-2" />
+                  Reject
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showBarangayRejectModal && barangayPreview && (
+          <div
+            className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+            onClick={() => {
+              if (isBarangayActionLoading) return
+              setShowBarangayRejectModal(false)
+              setBarangayRejectReason("")
+            }}
+          >
+            <div
+              className="bg-card rounded-lg max-w-md w-full p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-foreground">Reason for Rejection</h3>
+                <button
+                  onClick={() => {
+                    if (isBarangayActionLoading) return
+                    setShowBarangayRejectModal(false)
+                    setBarangayRejectReason("")
+                  }}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <p className="text-sm text-muted-foreground mb-4">
+                Please provide a reason for rejecting "{barangayPreview.requirementName}".
+              </p>
+              <textarea
+                value={barangayRejectReason}
+                onChange={(e) => setBarangayRejectReason(e.target.value)}
+                placeholder="Enter rejection reason..."
+                className="w-full p-3 border border-border rounded-md bg-background text-foreground min-h-[120px] mb-4 focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  className="flex-1 bg-transparent"
+                  onClick={() => {
+                    if (isBarangayActionLoading) return
+                    setShowBarangayRejectModal(false)
+                    setBarangayRejectReason("")
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  className="flex-1 disabled:opacity-70"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleBarangayRejectConfirm()
+                  }}
+                  disabled={isBarangayActionLoading || !barangayRejectReason.trim()}
+                >
+                  {isBarangayActionLoading ? "Saving..." : "Confirm Rejection"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   if (isLoggedIn && effectivePage === "clearance-clients") {
       return renderWithSidebar(
         <div className="flex-1 flex flex-col p-6 max-w-6xl mx-auto w-full">
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-3xl font-bold text-foreground">Mayor&apos;s Clearance</h1>
+          <div className="mb-8">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Award className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h1 className="text-3xl font-bold text-foreground">Mayor&apos;s Clearance</h1>
+                  <p className="text-muted-foreground">Generate and manage clearance documents</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-2xl font-semibold text-primary">
+                  {clearanceRecordsLoading ? "..." : filteredClearanceRecords.length}
+                </p>
+                <p className="text-sm text-muted-foreground">Available Records</p>
+              </div>
+            </div>
           </div>
 
-          <div className="mb-6 bg-card border border-border rounded-lg p-4">
-            <h2 className="text-lg font-semibold text-foreground mb-3">Saved Clearance Files</h2>
-            {clearanceFilesLoading && (
-              <div className="text-sm text-muted-foreground">Loading files...</div>
+          <div className="mb-6 bg-card rounded-lg p-4">
+            <h2 className="text-lg font-semibold text-foreground mb-3">Clearance Records</h2>
+            {clearanceRecordsLoading && (
+              <div className="text-sm text-muted-foreground">Loading records...</div>
             )}
-            {!clearanceFilesLoading && clearanceFiles.length === 0 && (
-              <div className="text-sm text-muted-foreground">No saved files yet. Generate one to see it here.</div>
+
+            {!clearanceRecordsLoading && clearanceRecords.length === 0 && (
+              <div className="text-sm text-muted-foreground">No clearance records available yet.</div>
             )}
-            {!clearanceFilesLoading && clearanceFiles.length > 0 && (
-              <div className="overflow-x-auto">
-                <table className="w-full border border-border rounded-md overflow-hidden text-sm">
-                  <thead className="bg-orange-500 text-white">
-                    <tr>
-                      <th className="px-3 py-2 text-left w-12">#</th>
-                      <th className="px-3 py-2 text-left">File Name</th>
-                      <th className="px-3 py-2 text-left w-32">Total Clients</th>
-                      <th className="px-3 py-2 text-left w-28">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {clearanceFiles
-                      .filter((file) => (file.fileName && file.fileName.trim()) || file.rowCount > 0)
-                      .map((file, idx) => (
-                        <tr key={file.id} className="border-t border-border">
-                          <td className="px-3 py-2 text-muted-foreground">{idx + 1}</td>
-                          <td className="px-3 py-2">
-                            <div className="font-medium text-foreground">{file.fileName || "Mayor's Clearance.xlsx"}</div>
-                            <div className="text-xs text-muted-foreground">{new Date(file.createdAt).toLocaleString()}</div>
-                          </td>
-                          <td className="px-3 py-2 text-foreground">{file.rowCount}</td>
-                          <td className="px-3 py-2">
-                            <Button size="sm" variant="outline" onClick={() => handleDownloadSavedClearance(file)}>
-                              <Download className="h-4 w-4 mr-2" />
-                              Download
-                            </Button>
-                          </td>
+
+            {!clearanceRecordsLoading && clearanceRecords.length > 0 && (
+              <div className="space-y-4">
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center">
+                    <Input
+                      placeholder="Search name, address, or number..."
+                      value={clearanceRecordSearch}
+                      onChange={(e) => setClearanceRecordSearch(e.target.value)}
+                      className="w-full md:w-72"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant={clearanceRecordRange === "monthly" ? "default" : "outline"}
+                      onClick={() => setClearanceRecordRange("monthly")}
+                      className={clearanceRecordRange === "monthly" ? "bg-primary hover:bg-primary/90 text-white" : ""}
+                    >
+                      Monthly
+                    </Button>
+                    <Button
+                      variant={clearanceRecordRange === "yearly" ? "default" : "outline"}
+                      onClick={() => setClearanceRecordRange("yearly")}
+                      className={clearanceRecordRange === "yearly" ? "bg-primary hover:bg-primary/90 text-white" : ""}
+                    >
+                      Yearly
+                    </Button>
+                    </div>
+
+                    <div className="flex items-center gap-2 md:justify-end">
+                      <Select
+                        value={clearanceRecordYear ? String(clearanceRecordYear) : ""}
+                        onValueChange={(value) => setClearanceRecordYear(Number(value))}
+                        disabled={clearanceRecordYears.length === 0}
+                      >
+                        <SelectTrigger className="w-[160px]">
+                          <SelectValue placeholder="Select year" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {clearanceRecordYears.map((year) => (
+                            <SelectItem key={year} value={String(year)}>
+                              {year}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {clearanceRecordRange === "monthly" && (
+                    <div className="flex items-center gap-2">
+                      <Select
+                        value={clearanceRecordMonth !== null ? String(clearanceRecordMonth) : ""}
+                        onValueChange={(value) => setClearanceRecordMonth(Number(value))}
+                      >
+                        <SelectTrigger className="w-[180px]">
+                          <SelectValue placeholder="Select month" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[
+                            "January",
+                            "February",
+                            "March",
+                            "April",
+                            "May",
+                            "June",
+                            "July",
+                            "August",
+                            "September",
+                            "October",
+                            "November",
+                            "December",
+                          ].map((label, index) => (
+                            <SelectItem key={label} value={String(index)}>
+                              {label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => setClearanceRecordMonth(null)}
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  )}
+
+
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      onClick={handleDownloadSavedClearance}
+                      disabled={clearanceFilesLoading}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Download Clearance File
+                    </Button>
+                  </div>
+                </div>
+
+                {filteredClearanceRecords.length === 0 && clearanceRecordYear && (
+                  <div className="rounded-lg border border-dashed border-muted-foreground/40 px-4 py-6 text-center text-sm text-muted-foreground">
+                    No records available for {clearanceRecordYear}.
+                  </div>
+                )}
+
+                {filteredClearanceRecords.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-primary text-white">
+                          <th className="border border-border p-3 text-center">No.</th>
+                          <th className="border border-border p-3 text-center">Full Name</th>
+                          <th className="border border-border p-3 text-center">Address</th>
+                          <th className="border border-border p-3 text-center">Contact No.</th>
+                          <th className="border border-border p-3 text-center">Application Date</th>
                         </tr>
-                      ))}
-                  </tbody>
-                </table>
+                      </thead>
+                      <tbody>
+                        {filteredClearanceRecords.map((record, idx) => (
+                          <tr
+                            key={record.id}
+                            className={`${idx % 2 === 0 ? "bg-background" : "bg-muted/30"} transition-colors`}
+                          >
+                            <td className="border border-border p-3 text-center text-muted-foreground">{idx + 1}</td>
+                            <td className="border border-border p-3 text-center">
+                              {record.fullName || "—"}
+                            </td>
+                            <td className="border border-border p-3 text-center">
+                              {record.address || "—"}
+                            </td>
+                            <td className="border border-border p-3 text-center text-muted-foreground">
+                              {record.phone || "—"}
+                            </td>
+                            <td className="border border-border p-3 text-center text-muted-foreground">
+                              {record.date ? formatDateWithSlash(record.date) : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
           </div>

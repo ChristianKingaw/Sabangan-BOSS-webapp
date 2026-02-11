@@ -1,7 +1,8 @@
-import { realtimeDb } from "../firebase"
+import { realtimeDb } from "../firebase.js"
 import { ref, get } from "firebase/database"
 import fs from "fs/promises"
 import path from "path"
+import { fileURLToPath } from "url"
 
 async function writeOut(data: unknown) {
   const outPath = path.resolve(process.cwd(), "database", "data", "data.json")
@@ -15,14 +16,64 @@ async function fetchClient() {
   return snap.exists() ? snap.val() : null
 }
 
+const scriptDir = typeof __dirname !== "undefined" ? __dirname : path.dirname(fileURLToPath(import.meta.url))
+
+async function resolveServiceAccountPath() {
+  const envPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.FIREBASE_ADMIN_SDK_PATH
+  if (envPath) {
+    const resolvedEnvPath = path.isAbsolute(envPath) ? envPath : path.resolve(process.cwd(), envPath)
+    try {
+      await fs.access(resolvedEnvPath)
+      return resolvedEnvPath
+    } catch (err) {
+      console.warn(`Configured service account path not found: ${resolvedEnvPath}`)
+    }
+  }
+
+  const candidateDirs = Array.from(
+    new Set([
+      path.join(process.cwd(), "database", "data"),
+      scriptDir,
+      process.cwd(),
+    ]),
+  )
+
+  const knownNames = [
+    "service-account.json",
+    "sabangan-app-firebase-adminsdk-fbsvc-9d9378f051.json",
+  ]
+
+  for (const dir of candidateDirs) {
+    for (const name of knownNames) {
+      const candidate = path.join(dir, name)
+      try {
+        await fs.access(candidate)
+        return candidate
+      } catch (err) {
+        // keep searching
+      }
+    }
+
+    try {
+      const entries = await fs.readdir(dir)
+      const fallback = entries.find((entry) => entry.endsWith(".json") && entry.includes("firebase-adminsdk"))
+      if (fallback) {
+        return path.join(dir, fallback)
+      }
+    } catch (err) {
+      // ignore directory read issues for this dir and continue searching
+    }
+  }
+
+  throw new Error(
+    `No service account path set in env and no default service account JSON found in: ${candidateDirs.join(", ")}`,
+  )
+}
+
 async function fetchAdminFallback() {
   try {
     const admin = await import("firebase-admin")
-    const saPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.FIREBASE_ADMIN_SDK_PATH
-    if (!saPath) {
-      throw new Error("No service account path set in GOOGLE_APPLICATION_CREDENTIALS or FIREBASE_ADMIN_SDK_PATH")
-    }
-    const abs = path.resolve(process.cwd(), saPath)
+    const abs = await resolveServiceAccountPath()
     const raw = await fs.readFile(abs, "utf8")
     const serviceAccount = JSON.parse(raw)
     if (!admin.apps.length) {

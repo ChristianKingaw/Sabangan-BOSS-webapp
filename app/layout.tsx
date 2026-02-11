@@ -1,6 +1,7 @@
 import type React from "react"
 import type { Metadata } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
+import { NetworkStatus } from "@/components/network-status"
 import { Toaster } from "@/components/ui/sonner"
 import "./globals.css"
 
@@ -47,6 +48,7 @@ export default function RootLayout({
         still hydrate normally).
       */}
       <body suppressHydrationWarning className={`font-sans antialiased`}>
+          <NetworkStatus />
         {children}
         <Toaster position="top-right" richColors />
       </body>

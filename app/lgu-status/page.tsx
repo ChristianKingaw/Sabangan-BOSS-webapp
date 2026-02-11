@@ -21,6 +21,7 @@ import {
   Pencil,
   CheckCircle2,
   Building2,
+  ClipboardList,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -61,6 +62,7 @@ const firebaseAuth = getAuth(firebaseApp)
 const navItems = [
   { id: "home", label: "Home", icon: LayoutDashboard, href: "/?page=home" },
   { id: "clients", label: "Business Application", icon: FileText, href: "/?page=clients" },
+  { id: "clearance-applications", label: "Mayor's Clearance Application", icon: ClipboardList, href: "/?page=clearance-applications" },
   { id: "clearance-clients", label: "Mayor's Clearance", icon: Award, href: "/?page=clearance-clients" },
   { id: "lgu-status", label: "LGU Status", icon: CalendarDays, href: "/lgu-status" },
 ] as const
@@ -520,8 +522,8 @@ export default function LGUStatusPage() {
     const isActive = item.id === "lgu-status"
     const baseClasses =
       variant === "desktop"
-        ? "w-full flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition"
-        : "flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium whitespace-nowrap"
+        ? "w-full flex items-center gap-3 rounded-md px-3 py-2 text-base font-medium transition"
+          : "flex items-center gap-2 rounded-full px-3 py-1.5 text-base font-medium whitespace-nowrap"
 
     const styles = isActive
       ? variant === "desktop"
@@ -567,7 +569,7 @@ export default function LGUStatusPage() {
           {navItems.map((item) => renderNavButton(item, "desktop"))}
         </nav>
         <div className="p-4">
-          <Button variant="outline" className="w-full justify-center gap-2" onClick={handleLogout}>
+          <Button variant="destructive" className="w-full justify-center gap-2 hover:shadow-lg hover:scale-105 transition-all duration-200" onClick={handleLogout}>
             <Power className="h-4 w-4" />
             Logout
           </Button>
@@ -575,25 +577,40 @@ export default function LGUStatusPage() {
       </aside>
 
       <div className="flex-1 flex flex-col md:ml-64">
-        <div className="md:hidden border-b border-border bg-card/70 px-4 py-3 flex gap-2 overflow-x-auto">
+        <div className="border-b border-border bg-card/80 px-4 py-3 flex gap-2 overflow-x-auto sticky top-0 z-30 backdrop-blur supports-[backdrop-filter]:bg-card/70 md:px-6">
           {navItems.map((item) => renderNavButton(item, "mobile"))}
         </div>
 
         <main className="flex-1 p-4 sm:p-6">
           <div className="max-w-6xl mx-auto space-y-8">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-sm uppercase tracking-widest text-primary/80 font-semibold">Status Board</p>
-                <h1 className="text-3xl font-bold text-foreground mt-1">LGU Sabangan Live Status</h1>
-                <p className="text-sm text-muted-foreground mt-2">
-                  Monitor municipality operations, mayor availability, and public-facing events in real time.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button variant="outline" onClick={handleManualRefresh} disabled={syncing} className="gap-2">
-                  {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
-                  {syncing ? "Syncing" : "Refresh"}
-                </Button>
+            {/* Enhanced Header Section */}
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary/5 via-primary/10 to-emerald-500/5 border border-primary/20 shadow-sm">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(34,197,94,0.03),transparent_50%),radial-gradient(circle_at_80%_80%,rgba(59,130,246,0.02),transparent_50%)]" />
+              <div className="relative p-6 sm:p-8">
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+                  <div className="flex items-start gap-4">
+                    <div className="flex-shrink-0">
+                      <div className="h-16 w-16 rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center">
+                        <Building2 className="h-8 w-8 text-primary" />
+                      </div>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
+                          <ShieldCheck className="h-3 w-3 mr-1" />
+                          Live Status Board
+                        </Badge>
+                      </div>
+                      <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-2">
+                        LGU Sabangan Operations Center
+                      </h1>
+                      <p className="text-sm text-muted-foreground mb-4 max-w-2xl">
+                        Real-time monitoring of municipality operations, mayor availability, and community events.
+                        All changes sync instantly across kiosks and mobile applications.
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 

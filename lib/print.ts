@@ -6,8 +6,8 @@ export function handlePrintHtml(html: string | null, title = "Document", extraHt
     iframe.style.position = "fixed"
     iframe.style.right = "0"
     iframe.style.bottom = "0"
-    iframe.style.width = "0"
-    iframe.style.height = "0"
+    iframe.style.width = "1px"
+    iframe.style.height = "1px"
     iframe.style.border = "0"
 
     document.body.appendChild(iframe)
@@ -38,19 +38,30 @@ export function handlePrintHtml(html: string | null, title = "Document", extraHt
     doc.close()
 
     iframe.onload = () => {
+      let cleaned = false
+      const cleanup = () => {
+        if (cleaned) return
+        cleaned = true
+        try {
+          if (iframe.parentNode) document.body.removeChild(iframe)
+        } catch {}
+      }
+
+      const afterPrint = () => {
+        cleanup()
+        if (iframe.contentWindow) iframe.contentWindow.onafterprint = null
+      }
+
       try {
+        if (iframe.contentWindow) iframe.contentWindow.onafterprint = afterPrint
         iframe.contentWindow?.focus()
         iframe.contentWindow?.print()
       } catch (err) {
         console.error("Print failed", err)
       }
 
-      // cleanup after print
-      setTimeout(() => {
-        try {
-          if (iframe.parentNode) document.body.removeChild(iframe)
-        } catch {}
-      }, 1000)
+      // fallback cleanup in case onafterprint does not fire
+      setTimeout(cleanup, 8000)
     }
   } catch (err) {
     console.error("Error preparing iframe print", err)
@@ -64,26 +75,38 @@ export function handlePrintPdf(pdfUrl: string | null, title = "Document PDF") {
     iframe.style.position = "fixed"
     iframe.style.right = "0"
     iframe.style.bottom = "0"
-    iframe.style.width = "0"
-    iframe.style.height = "0"
+    iframe.style.width = "1px"
+    iframe.style.height = "1px"
     iframe.style.border = "0"
     iframe.src = pdfUrl
 
     document.body.appendChild(iframe)
 
     iframe.onload = () => {
+      let cleaned = false
+      const cleanup = () => {
+        if (cleaned) return
+        cleaned = true
+        try {
+          if (iframe.parentNode) document.body.removeChild(iframe)
+        } catch {}
+      }
+
+      const afterPrint = () => {
+        cleanup()
+        if (iframe.contentWindow) iframe.contentWindow.onafterprint = null
+      }
+
       try {
+        if (iframe.contentWindow) iframe.contentWindow.onafterprint = afterPrint
         iframe.contentWindow?.focus()
         iframe.contentWindow?.print()
       } catch (err) {
         console.error("PDF print failed", err)
       }
 
-      setTimeout(() => {
-        try {
-          if (iframe.parentNode) document.body.removeChild(iframe)
-        } catch {}
-      }, 1000)
+      // fallback cleanup in case onafterprint does not fire
+      setTimeout(cleanup, 8000)
     }
   } catch (err) {
     console.error("Error preparing PDF iframe print", err)

@@ -2,6 +2,24 @@ import { readFile } from 'fs/promises'
 import path from 'path'
 import { NextResponse } from 'next/server'
 
+type BusinessEntry = {
+  meta?: {
+    applicantUid?: string
+    applicantName?: string
+    businessName?: string
+  }
+  form?: {
+    applicantUid?: string
+    businessName?: string
+    firstName?: string
+    middleName?: string
+    middle?: string
+    middle_name?: string
+    lastName?: string
+  }
+  [key: string]: unknown
+}
+
 export async function GET(request: Request) {
   try {
     const p = path.resolve(process.cwd(), 'database', 'data', 'data.json')
@@ -9,7 +27,7 @@ export async function GET(request: Request) {
     const json = JSON.parse(content)
 
     // return the business applications node
-    const node = json?.business?.business_application ?? null
+    const node = (json?.business?.business_application ?? null) as Record<string, BusinessEntry> | null
 
     // allow optional query `name` or `uid` to filter results
     const url = new URL(request.url)

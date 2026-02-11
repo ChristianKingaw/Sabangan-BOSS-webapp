@@ -23,10 +23,11 @@ for (const key of REQUIRED_ENV_VARS) {
 
 async function main() {
   const { realtimeDb } = await import("../database/firebase")
-  const namespace =
+  const rawNamespace =
     process.env.NEXT_PUBLIC_DATABASE_NAMESPACE ??
     process.env.NEXT_PUBLIC_FIREBASE_DATABASE_NAMESPACE ??
-    "business/users/webapp"
+    "users/webapp"
+  const namespace = rawNamespace.endsWith("/staff") ? rawNamespace : `${rawNamespace}/staff`
   const staffRef = ref(realtimeDb, namespace)
   const newRef = push(staffRef)
   if (!newRef.key) throw new Error("Failed to allocate key")
