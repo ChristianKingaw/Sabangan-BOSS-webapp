@@ -1,18 +1,7 @@
-import dotenv from "dotenv"
-import path from "path"
-
-// Load .env.local first (Next.js convention), then fallback to .env
-try {
-  if (typeof process !== "undefined" && process) {
-    dotenv.config({ path: path.resolve(process.cwd(), ".env.local") })
-    dotenv.config()
-  }
-} catch (err) {
-  // Some environments may not provide stdio/TTY; ignore dotenv failures here
-}
 import { initializeApp, getApp, getApps, type FirebaseApp } from "firebase/app"
 import { getFirestore } from "firebase/firestore"
 import { getDatabase } from "firebase/database"
+import { getAuth, initializeAuth, browserLocalPersistence, type Auth } from "firebase/auth"
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -33,5 +22,25 @@ function createFirebaseApp(): FirebaseApp {
 }
 
 export const app = createFirebaseApp()
+
+// Initialize auth with browserLocalPersistence BEFORE any other SDK
+// This ensures user sessions persist across page refreshes
+let firebaseAuth: Auth | null = null
+if (typeof window !== "undefined") {
+  try {
+    // Try to initialize with persistence first
+    firebaseAuth = initializeAuth(app, { persistence: browserLocalPersistence })
+  } catch (err) {
+    // Already initialized - get the existing instance
+    if (err instanceof Error && err.message.includes("already exists")) {
+      firebaseAuth = getAuth(app)
+    } else {
+      console.error("Failed to initialize auth:", err)
+      firebaseAuth = getAuth(app)
+    }
+  }
+}
+
+export const auth = firebaseAuth
 export const db = getFirestore(app)
 export const realtimeDb = getDatabase(app)

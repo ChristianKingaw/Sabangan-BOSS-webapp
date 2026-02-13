@@ -1,5 +1,5 @@
 import { realtimeDb } from "@/database/firebase"
-import { onValue, push, ref, set, Unsubscribe, get } from "firebase/database"
+import { get, onValue, push, ref, set, Unsubscribe } from "firebase/database"
 
 export type ClearanceFileRecord = {
   fileName: string
@@ -11,30 +11,21 @@ export type ClearanceFileRecord = {
 
 const CLEARANCE_PATH = "mayors_clearance_files"
 
+const getFileYearKey = (fileName: unknown): string | null => {
+  const match = String(fileName ?? "").match(/(19|20)\d{2}/)
+  return match ? match[0] : null
+}
+
 /**
  * Persist a generated Mayor's Clearance Excel file (base64) with metadata.
  */
 export async function saveClearanceFile(record: ClearanceFileRecord) {
+  const yearKey = getFileYearKey(record.fileName)
   const clearanceRef = ref(realtimeDb, CLEARANCE_PATH)
-
-  try {
-    // Read existing entries once and avoid pushing duplicate files
-    const snapshot = await get(clearanceRef)
-    const node = (snapshot.val() || {}) as Record<string, any>
-    for (const payload of Object.values(node) as any[]) {
-      try {
-        if (
-          (payload?.fileName ?? "") === (record.fileName ?? "") &&
-          (payload?.rowCount ?? 0) === (record.rowCount ?? 0) &&
-          (payload?.dataBase64 ?? "") === (record.dataBase64 ?? "")
-        ) {
-          // identical file already stored; skip pushing
-          return
-        }
-      } catch {}
-    }
-  } catch (err) {
-    // If read fails, fall back to pushing to avoid losing the generated file
+  if (yearKey) {
+    const perYearRef = ref(realtimeDb, `${CLEARANCE_PATH}/${String(yearKey)}`)
+    await set(perYearRef, record)
+    return
   }
 
   await push(clearanceRef, record)
@@ -113,4 +104,36 @@ export function subscribeToClearanceFiles(callback: (rows: ClearanceFileWithId[]
       if (onError) onError(err as Error)
     }
   )
+}
+
+export async function fetchClearanceFilesOnce(): Promise<ClearanceFileWithId[]> {
+  try {
+    const snapshot = await get(ref(realtimeDb, CLEARANCE_PATH))
+    if (!snapshot.exists()) return []
+
+    const value = snapshot.val() || {}
+    const list: ClearanceFileWithId[] = []
+
+    const seen = new Set<string>()
+    for (const [id, payload] of Object.entries(value) as Array<[string, any]>) {
+      const normalizedCreatedAt = normalizeTimestamp(payload?.createdAt)
+      const key = `${payload?.fileName ?? ""}|${normalizedCreatedAt}|${payload?.rowCount ?? 0}|${payload?.createdBy ?? ""}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      list.push({
+        id,
+        fileName: payload?.fileName ?? "",
+        createdAt: normalizedCreatedAt,
+        rowCount: payload?.rowCount ?? 0,
+        dataBase64: payload?.dataBase64 ?? "",
+        createdBy: payload?.createdBy ?? null,
+      })
+    }
+
+    list.sort((a, b) => b.createdAt - a.createdAt)
+    return list
+  } catch (err) {
+    console.error("Failed to fetch clearance files", err)
+    return []
+  }
 }

@@ -144,10 +144,7 @@ async function main() {
   }
 
   // Load admin SDK after env vars are in place
-  const [{ adminAuth, adminDb }, { ServerValue }] = await Promise.all([
-    import("../lib/firebase-admin"),
-    import("firebase-admin/database"),
-  ])
+  const { adminAuth, adminDb, adminServerValue } = await import("../lib/firebase-admin")
 
   const email = args.email.trim().toLowerCase()
   const password = args.password
@@ -183,7 +180,7 @@ async function main() {
     lastName: args.lastName,
     email,
     passwordHash: hashPassword(password),
-    createdAt: ServerValue.TIMESTAMP,
+    createdAt: adminServerValue.TIMESTAMP,
     createdByEmail: args.createdByEmail ?? null,
     emailVerified,
     uid: authUser.uid,

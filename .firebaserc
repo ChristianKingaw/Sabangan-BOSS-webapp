@@ -1,5 +1,11 @@
 {
   "projects": {
     "default": "sabangan-app"
+  },
+  "targets": {},
+  "etags": {
+    "sabangan-app": {
+      "extensionInstances": {}
+    }
   }
 }

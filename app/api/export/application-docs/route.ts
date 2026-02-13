@@ -2,12 +2,17 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import archiver from "archiver"
 import { adminAuth, adminDb } from "@/lib/firebase-admin"
-import { renderFromTemplate } from "@/lib/docx/renderFromTemplate"
+import { renderFromTemplateBuffer } from "@/lib/docx/renderFromTemplate"
+import { loadTemplateBuffer } from "@/lib/docx/loadTemplateBuffer"
+import { getRequestPublicOrigin } from "@/lib/http/getRequestPublicOrigin"
 import { mapApplicationToTemplate } from "@/lib/export/mapApplicationToTemplate"
 import { BUSINESS_APPLICATION_PATH } from "@/lib/business-applications"
 
 // Force Node.js runtime for this route (required for file system operations)
 export const runtime = "nodejs"
+// Must run per-request to read admin credentials and templates
+export const dynamic = "force-dynamic"
+export const revalidate = 0
 
 // Template paths
 const TEMPLATES = {
@@ -85,6 +90,7 @@ export async function POST(request: NextRequest) {
 
     const applicationData = snapshot.val()
     const formData = applicationData?.form ?? {}
+    const publicOrigin = getRequestPublicOrigin(request)
 
     // 4. Map database fields to template tags
     const templateData = mapApplicationToTemplate(formData)
@@ -94,11 +100,12 @@ export async function POST(request: NextRequest) {
     const isNew = applicationType === "new"
 
     // 6. Render documents
-    const mainFormBuffer = renderFromTemplate(TEMPLATES.mainForm, templateData)
-    
-    const swornDocBuffer = isNew
-      ? renderFromTemplate(TEMPLATES.swornCapital, templateData)
-      : renderFromTemplate(TEMPLATES.swornGrossReceipts, templateData)
+    const mainTemplateBuffer = await loadTemplateBuffer(TEMPLATES.mainForm, publicOrigin)
+    const mainFormBuffer = renderFromTemplateBuffer(mainTemplateBuffer, templateData)
+
+    const swornTemplatePath = isNew ? TEMPLATES.swornCapital : TEMPLATES.swornGrossReceipts
+    const swornTemplateBuffer = await loadTemplateBuffer(swornTemplatePath, publicOrigin)
+    const swornDocBuffer = renderFromTemplateBuffer(swornTemplateBuffer, templateData)
 
     const swornDocName = isNew
       ? "Sworn_Statement_of_Capital.docx"

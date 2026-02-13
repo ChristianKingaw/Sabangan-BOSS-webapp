@@ -28,3 +28,13 @@ next-env.d.ts
 
 .env.local
 serviceAccountKey.json
+
+# local build/deploy artifacts
+.firebase/
+.tmp/
+database-debug.log
+firestore-debug.log
+tsconfig.tsbuildinfo
+
+# local secrets
+sa-inline.json

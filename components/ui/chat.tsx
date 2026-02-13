@@ -2,10 +2,30 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { realtimeDb } from "@/database/firebase"
-import { getAuth } from "firebase/auth"
-import { ref, push } from "firebase/database"
+import { getAuth, onAuthStateChanged } from "firebase/auth"
 import { BUSINESS_APPLICATION_PATH } from "@/lib/business-applications"
+
+// Firebase REST API helper to bypass SDK cache issues
+const FIREBASE_DB_URL = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || ""
+
+async function firebaseRestPush(
+  path: string,
+  data: Record<string, unknown>,
+  idToken: string
+): Promise<string> {
+  const url = `${FIREBASE_DB_URL}/${path}.json?auth=${encodeURIComponent(idToken)}`
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "")
+    throw new Error(`Firebase REST push failed: ${resp.status} ${errText}`)
+  }
+  const result = await resp.json()
+  return result?.name ?? ""
+}
 
 export type ChatMessage = {
   id: string
@@ -38,21 +58,47 @@ export default function Chat({ threads, applicationId }: { threads: Thread[]; ap
   const handleSend = async () => {
     if (!input.trim() || !selectedThread) return
     const auth = getAuth()
-    const user = auth.currentUser
+    let user = auth.currentUser
+    
+    // Wait for auth state to restore after page refresh
+    if (!user) {
+      user = await new Promise<typeof auth.currentUser>((resolve) => {
+        let resolved = false
+        const unsubscribe = onAuthStateChanged(auth, (u) => {
+          if (resolved) return
+          if (u) {
+            resolved = true
+            unsubscribe()
+            resolve(u)
+          }
+          // Don't resolve with null immediately - wait for potential restoration
+        })
+        // Timeout after 5 seconds
+        setTimeout(() => {
+          if (!resolved) {
+            resolved = true
+            unsubscribe()
+            resolve(auth.currentUser)
+          }
+        }, 5000)
+      })
+    }
+    
     if (!user) return alert("You must be logged in to send messages.")
 
     try {
       setSending(true)
-      const chatRef = ref(realtimeDb, `${BUSINESS_APPLICATION_PATH}/${applicationId}/requirements/${selectedThread}/chat`)
-      await push(chatRef, {
+      const idToken = await user.getIdToken(true)
+      const chatPath = `${BUSINESS_APPLICATION_PATH}/${applicationId}/requirements/${selectedThread}/chat`
+      await firebaseRestPush(chatPath, {
         senderRole: "admin",
         senderUid: user.uid,
         text: input.trim(),
         ts: Date.now(),
-      })
+      }, idToken)
       setInput("")
     } catch (err) {
-      console.error("Failed to send chat message", err)
+      console.error("Failed to send message", err)
       alert("Failed to send message. Please try again.")
     } finally {
       setSending(false)

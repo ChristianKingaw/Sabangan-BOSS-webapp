@@ -16,9 +16,9 @@ import { Button } from "@/components/ui/button"
 import Image from "next/image"
 import Header from "@/components/header"
 import { toast } from "sonner"
-import { onValue, ref, update, push } from "firebase/database"
-import { getAuth, onAuthStateChanged } from "firebase/auth"
-import { app as firebaseApp, realtimeDb } from "@/database/firebase"
+import { onValue, ref, get } from "firebase/database"
+import { onAuthStateChanged } from "firebase/auth"
+import { app as firebaseApp, realtimeDb, auth as firebaseAuth } from "@/database/firebase"
 import {
   BUSINESS_APPLICATION_PATH,
   buildRequirementNotificationId,
@@ -33,8 +33,6 @@ import { renderAsync } from "docx-preview";
 import { handlePrintHtml, handlePrintPdf } from "@/lib/print"
 import { mergePdfUrls } from "@/lib/pdf"
 import { PDFDocument } from "pdf-lib"
-
-const firebaseAuth = getAuth(firebaseApp)
 
 const MS_IN_DAY = 24 * 60 * 60 * 1000
 const NEW_LOOKBACK_DAYS = 30
@@ -55,11 +53,173 @@ type RequirementDocumentItem = {
   fileIndex: number
 }
 
+// Firebase RTDB keys cannot include . # $ [ ] or /. Ensure string conversion first.
+const sanitizeKey = (value: unknown) => (String(value ?? "").replace(/[.#$\[\]/]/g, "-") || "-")
+
+// Firebase REST API helper to bypass SDK cache issues (ChildrenNode.equals recursion)
+const FIREBASE_DB_URL = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || ""
+
+async function firebaseRestUpdate(
+  path: string,
+  data: Record<string, unknown>,
+  idToken: string
+): Promise<void> {
+  const url = `${FIREBASE_DB_URL}/${path}.json?auth=${encodeURIComponent(idToken)}`
+  const resp = await fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "")
+    throw new Error(`Firebase REST update failed: ${resp.status} ${errText}`)
+  }
+}
+
+async function firebaseRestSet(
+  path: string,
+  data: unknown,
+  idToken: string
+): Promise<void> {
+  const url = `${FIREBASE_DB_URL}/${path}.json?auth=${encodeURIComponent(idToken)}`
+  const resp = await fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "")
+    throw new Error(`Firebase REST set failed: ${resp.status} ${errText}`)
+  }
+}
+
+async function firebaseRestPush(
+  path: string,
+  data: Record<string, unknown>,
+  idToken: string
+): Promise<string> {
+  const url = `${FIREBASE_DB_URL}/${path}.json?auth=${encodeURIComponent(idToken)}`
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "")
+    throw new Error(`Firebase REST push failed: ${resp.status} ${errText}`)
+  }
+  const result = await resp.json()
+  return result?.name ?? ""
+}
+
 function ClientRequirementsContent() {
+  const renderCountRef = useRef(0)
+  renderCountRef.current++
+  
+  const authUserRestoredRef = useRef<boolean>(false)
+  
+  // Log on every render
+  console.debug(`[Render #${renderCountRef.current}] firebaseAuth exists:`, !!firebaseAuth, "firebaseAuth.currentUser:", firebaseAuth?.currentUser?.uid ?? "null", "authUserRestoredRef:", authUserRestoredRef.current)
+
+  // Use centralized auth from firebase.ts - already initialized with browserLocalPersistence
+  const getAuthInstance = useCallback(() => {
+    if (!firebaseAuth) {
+      console.debug("[getAuthInstance] No firebaseAuth (SSR), returning null")
+      return null
+    }
+    console.debug("[getAuthInstance] Returning centralized firebaseAuth, currentUser:", firebaseAuth.currentUser?.uid ?? "null")
+    return firebaseAuth
+  }, [])
+
+  // Helper to wait for auth user to be restored after page refresh
+  const waitForAuthUser = useCallback(async (): Promise<typeof firebaseAuth extends null ? null : NonNullable<typeof firebaseAuth>["currentUser"]> => {
+    const auth = getAuthInstance()
+    console.debug("[waitForAuthUser] Called, auth:", auth ? "exists" : "null", "auth.currentUser:", auth?.currentUser?.uid ?? "null")
+    if (!auth) return null
+    
+    // If we already have a user, return immediately
+    if (auth.currentUser) {
+      console.debug("[waitForAuthUser] User already exists, returning immediately:", auth.currentUser.uid)
+      authUserRestoredRef.current = true
+      return auth.currentUser
+    }
+    
+    // Always wait for auth state to settle, even if we've waited before
+    // Firebase may need time to restore the user from IndexedDB
+    console.debug("[waitForAuthUser] Starting auth wait, authUserRestoredRef:", authUserRestoredRef.current)
+    return new Promise((resolve) => {
+      let resolved = false
+      let delayTimeoutId: NodeJS.Timeout | null = null
+      let pollIntervalId: NodeJS.Timeout | null = null
+      
+      const cleanup = () => {
+        if (delayTimeoutId) clearTimeout(delayTimeoutId)
+        if (pollIntervalId) clearInterval(pollIntervalId)
+      }
+      
+      // Poll every 100ms to check if user was restored
+      // This catches cases where IndexedDB restoration happens
+      // but onAuthStateChanged doesn't fire again
+      pollIntervalId = setInterval(() => {
+        if (!resolved && auth.currentUser) {
+          console.debug("[waitForAuthUser] Poll found user:", auth.currentUser.uid)
+          resolved = true
+          authUserRestoredRef.current = true
+          cleanup()
+          unsubscribe()
+          resolve(auth.currentUser)
+        }
+      }, 100)
+      
+      const unsubscribe = onAuthStateChanged(auth, (user) => {
+        console.debug("[waitForAuthUser] onAuthStateChanged callback, user:", user?.uid ?? "null", "resolved:", resolved)
+        if (resolved) return
+        if (user) {
+          // User restored successfully
+          console.debug("[waitForAuthUser] User found, resolving immediately")
+          resolved = true
+          authUserRestoredRef.current = true
+          cleanup()
+          unsubscribe()
+          resolve(user)
+        } else {
+          // Got null - wait longer for potential IndexedDB restoration
+          if (!delayTimeoutId) {
+            console.debug("[waitForAuthUser] Got null, starting 4s delay timer")
+            delayTimeoutId = setTimeout(() => {
+              if (!resolved) {
+                console.debug("[waitForAuthUser] 4s delay completed, currentUser:", auth.currentUser?.uid ?? "null")
+                resolved = true
+                authUserRestoredRef.current = true
+                cleanup()
+                unsubscribe()
+                // Final check - maybe user was restored during the wait
+                resolve(auth.currentUser)
+              }
+            }, 4000)
+          }
+        }
+      })
+      
+      // Ultimate timeout after 8 seconds
+      setTimeout(() => {
+        if (!resolved) {
+          console.debug("[waitForAuthUser] 8s ultimate timeout, currentUser:", auth.currentUser?.uid ?? "null")
+          resolved = true
+          authUserRestoredRef.current = true
+          cleanup()
+          unsubscribe()
+          resolve(auth.currentUser)
+        }
+      }, 8000)
+    })
+  }, [getAuthInstance])
+
   const params = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const id = params.id as string
+  const rawId = (params as { id?: string | string[] } | undefined)?.id
+  const id = Array.isArray(rawId) ? rawId[0] : rawId ?? ""
 
   const [client, setClient] = useState<BusinessApplicationRecord | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -88,14 +248,114 @@ function ClientRequirementsContent() {
 
   // Wait for Firebase Auth to be ready
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
+    const auth = getAuthInstance()
+    if (!auth) {
+      console.debug("[Auth] No auth instance, setting ready")
       setIsAuthReady(true)
-      if (!user) {
-        router.replace("/")
+      return
+    }
+
+    let cancelled = false
+    
+    const waitForAuth = async () => {
+      console.debug("[Auth] Starting auth wait, currentUser:", auth.currentUser?.uid ?? "null")
+      
+      try {
+        // authStateReady() returns a promise that resolves when initial auth state is determined
+        // This is available in Firebase 9.22+
+        if (typeof (auth as any).authStateReady === "function") {
+          console.debug("[Auth] Using authStateReady()")
+          await (auth as any).authStateReady()
+          console.debug("[Auth] authStateReady resolved, currentUser:", auth.currentUser?.uid ?? "null")
+        } else {
+          // Fallback for older Firebase versions:
+          // Wait for onAuthStateChanged, but if we get null, wait a bit more
+          // in case the user is being restored from IndexedDB
+          console.debug("[Auth] Using onAuthStateChanged fallback")
+          await new Promise<void>((resolve) => {
+            let resolved = false
+            let delayTimeoutId: NodeJS.Timeout | null = null
+            
+            const unsubscribe = onAuthStateChanged(auth, (user) => {
+              console.debug("[Auth] onAuthStateChanged callback, user:", user?.uid ?? "null", "resolved:", resolved)
+              if (resolved) return
+              
+              if (user) {
+                // User found - definitely authenticated, resolve immediately
+                console.debug("[Auth] User found, resolving immediately")
+                resolved = true
+                if (delayTimeoutId) clearTimeout(delayTimeoutId)
+                unsubscribe()
+                resolve()
+              } else {
+                // Got null - could be "not logged in" or "still loading"
+                // Wait 3 seconds to allow IndexedDB restoration to complete
+                if (!delayTimeoutId) {
+                  console.debug("[Auth] Got null, starting 3s delay timer")
+                  delayTimeoutId = setTimeout(() => {
+                    if (!resolved) {
+                      console.debug("[Auth] 3s delay completed, currentUser:", auth.currentUser?.uid ?? "null")
+                      resolved = true
+                      unsubscribe()
+                      resolve()
+                    }
+                  }, 3000)
+                }
+              }
+            })
+            
+            // Final timeout after 6 seconds as ultimate fallback
+            setTimeout(() => {
+              if (!resolved) {
+                console.debug("[Auth] 6s ultimate timeout, currentUser:", auth.currentUser?.uid ?? "null")
+                resolved = true
+                if (delayTimeoutId) clearTimeout(delayTimeoutId)
+                unsubscribe()
+                resolve()
+              }
+            }, 6000)
+          })
+        }
+      } catch (err) {
+        console.error("[Auth] Error waiting for auth:", err)
       }
+      
+      if (cancelled) {
+        console.debug("[Auth] Cancelled, returning early")
+        return
+      }
+      
+      authUserRestoredRef.current = true
+      console.debug("[Auth] Auth wait complete, currentUser:", auth.currentUser?.uid ?? "null")
+      
+      // Don't redirect here - let the page load and check auth when user interacts
+      // This allows Firebase more time to restore the user from IndexedDB
+      console.debug("[Auth] Setting isAuthReady=true (auth check will happen on interaction)")
+      setIsAuthReady(true)
+    }
+    
+    waitForAuth()
+    
+    return () => {
+      cancelled = true
+    }
+  }, [getAuthInstance, router])
+
+  // Monitor auth state changes continuously for debugging
+  useEffect(() => {
+    const auth = getAuthInstance()
+    if (!auth) return
+    
+    console.debug("[AuthMonitor] Setting up continuous auth monitor")
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      console.debug("[AuthMonitor] Auth state changed! user:", user?.uid ?? "null", "isAuthReady:", isAuthReady)
     })
-    return () => unsubscribe()
-  }, [router])
+    
+    return () => {
+      console.debug("[AuthMonitor] Cleaning up auth monitor")
+      unsubscribe()
+    }
+  }, [getAuthInstance, isAuthReady])
 
   const requirements = client?.requirements ?? []
   const hasRequirementUpdate = useMemo(
@@ -258,10 +518,10 @@ function ClientRequirementsContent() {
 
       // First try server-side PDF conversion for the application (best-effort)
       try {
-        const currentUser = firebaseAuth.currentUser
+        const currentUser = getAuthInstance()?.currentUser
         if (currentUser) {
-          const idToken = await currentUser.getIdToken()
-          const resp = await fetch("/api/export/docx-to-pdf", {
+          let idToken = await currentUser.getIdToken()
+          let resp = await fetch("/api/export/docx-to-pdf", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -269,6 +529,19 @@ function ClientRequirementsContent() {
             },
             body: JSON.stringify({ applicationId: id }),
           })
+
+          if (resp.status === 401) {
+            idToken = await currentUser.getIdToken(true)
+            resp = await fetch("/api/export/docx-to-pdf", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${idToken}`,
+              },
+              body: JSON.stringify({ applicationId: id }),
+            })
+          }
+
           if (resp.ok) {
             const blob = await resp.blob()
             const url = URL.createObjectURL(blob)
@@ -280,10 +553,17 @@ function ClientRequirementsContent() {
             }
             return
           }
-          // If server returned non-ok, check for soffice/ENOENT details and notify
+          // If server returned non-ok, check conversion details and notify when converter is unavailable
           const errData = await resp.json().catch(() => ({}))
           const details = (errData && (errData.details || errData.error || "")) as string
-          if (String(details).toLowerCase().includes("soffice") || String(details).toLowerCase().includes("enoent")) {
+          const detailsLower = String(details).toLowerCase()
+          if (
+            detailsLower.includes("soffice") ||
+            detailsLower.includes("enoent") ||
+            detailsLower.includes("converter") ||
+            detailsLower.includes("econnrefused") ||
+            detailsLower.includes("fetch failed")
+          ) {
             toast.info("Server-side PDF conversion unavailable; falling back to client-side preview.")
           }
         }
@@ -317,7 +597,7 @@ function ClientRequirementsContent() {
         setIsDocxLoading(false)
       }
     }
-  }, [activeDocument])
+  }, [activeDocument, getAuthInstance, id])
 
   const handleCloseDocxModal = () => {
     docxPreviewCancelRef.current = true
@@ -335,11 +615,27 @@ function ClientRequirementsContent() {
     status: LocalDocumentStatus["status"],
     note?: string
   ) => {
-    // Check if user is authenticated
-    const currentUser = firebaseAuth.currentUser
+    console.debug("[persistDocumentStatus] Called, isAuthReady:", isAuthReady, "authUserRestoredRef:", authUserRestoredRef.current)
+    
+    // Wait for auth user to be restored (handles page refresh scenario)
+    const currentUser = await waitForAuthUser()
+    
+    console.debug("[persistDocumentStatus] After waitForAuthUser, currentUser:", currentUser?.uid ?? "null")
+    
     if (!currentUser) {
+      console.debug("[persistDocumentStatus] No user, showing error and redirecting")
       toast.error("You must be logged in to update document status.")
       router.replace("/")
+      return
+    }
+
+    // Get fresh ID token for REST API calls
+    let idToken: string
+    try {
+      idToken = await currentUser.getIdToken(true)
+    } catch (tokenErr) {
+      console.error("Failed to get ID token", tokenErr)
+      toast.error("Authentication error. Please refresh and try again.")
       return
     }
 
@@ -355,15 +651,21 @@ function ClientRequirementsContent() {
         return -1
       })()
 
+      const clientId = id || client?.id || ""
+      if (!realtimeDb) {
+        console.error("persistDocumentStatus: realtimeDb not initialized")
+        toast.error("Database unavailable. Please refresh and try again.")
+        return
+      }
+      const safeReqName = sanitizeKey(targetDocument.requirement.name || "requirement")
+      const safeFileId = sanitizeKey(targetDocument.file.id || "file")
       const currentFileRef = ref(
         realtimeDb,
-        `${BUSINESS_APPLICATION_PATH}/${id}/requirements/${targetDocument.requirement.name}/files/${targetDocument.file.id}`
+        `${BUSINESS_APPLICATION_PATH}/${clientId}/requirements/${safeReqName}/files/${safeFileId}`
       )
 
       // read current snapshot
-      const snapshot = (await new Promise((resolve, reject) => {
-        onValue(currentFileRef, (snap) => resolve(snap), (error) => reject(error))
-      })) as import("firebase/database").DataSnapshot
+      const snapshot = await get(currentFileRef)
 
       if (snapshot.exists()) {
         const existingFile = snapshot.val() as { fileName: string; fileSize: number; fileHash: string }
@@ -372,8 +674,26 @@ function ClientRequirementsContent() {
           existingFile.fileSize !== targetDocument.file.fileSize ||
           existingFile.fileHash !== targetDocument.file.fileHash
         ) {
-          const clientRef = ref(realtimeDb, `${BUSINESS_APPLICATION_PATH}/${id}`)
-          await update(clientRef, { status: "Pending Update Review" })
+          const clientStatusPath = `${BUSINESS_APPLICATION_PATH}/${clientId}/status`
+          const clientStatusPathType = typeof clientStatusPath
+          if (clientStatusPathType !== "string" || !clientId) {
+            console.error("persistDocumentStatus: invalid client status path", {
+              clientId,
+              clientIdType: typeof clientId,
+              businessPath: BUSINESS_APPLICATION_PATH,
+              businessPathType: typeof BUSINESS_APPLICATION_PATH,
+              clientStatusPath,
+              clientStatusPathType,
+            })
+          } else {
+            if (process.env.NODE_ENV !== "production") {
+              console.debug("persistDocumentStatus: updating client status via REST", {
+                clientId,
+                path: clientStatusPath,
+              })
+            }
+            await firebaseRestSet(clientStatusPath, "Pending Update Review", idToken)
+          }
         }
       }
 
@@ -388,33 +708,56 @@ function ClientRequirementsContent() {
       if (status === "rejected") payload.adminNote = note ?? ""
       else if (status === "approved") payload.adminNote = ""
 
+      // Ensure plain JSON object
+      const cleanPayload = JSON.parse(JSON.stringify(payload))
+
       // If the requirement has exactly two files, apply the same status to both files
       if (targetDocument.requirement.files && targetDocument.requirement.files.length === 2) {
-        const updates = targetDocument.requirement.files.map((f) => {
-          const fileRef = ref(
-            realtimeDb,
-            `${BUSINESS_APPLICATION_PATH}/${id}/requirements/${targetDocument.requirement.name}/files/${f.id}`
-          )
-          return update(fileRef, payload)
-        })
-        await Promise.all(updates)
+        await Promise.all(
+          targetDocument.requirement.files.map((f) => {
+            const safeId = sanitizeKey(f.id || "file")
+            const filePath = `${BUSINESS_APPLICATION_PATH}/${clientId}/requirements/${safeReqName}/files/${safeId}`
+            if (process.env.NODE_ENV !== "production") {
+              console.debug("persistDocumentStatus: updating file status via REST", {
+                clientId,
+                path: filePath,
+                updatePayload: { status: cleanPayload.status, adminNote: cleanPayload.adminNote ?? "" },
+              })
+            }
+            return firebaseRestUpdate(filePath, {
+              status: cleanPayload.status,
+              adminNote: cleanPayload.adminNote ?? "",
+            }, idToken)
+          })
+        )
         // If rejected with a note, also send the rejection note to the requirement chat so the applicant sees it
         if (status === "rejected" && note && note.trim()) {
           try {
-            const chatRef = ref(realtimeDb, `${BUSINESS_APPLICATION_PATH}/${id}/requirements/${targetDocument.requirement.name}/chat`)
-            await push(chatRef, { senderRole: "admin", senderUid: currentUser.uid, text: note.trim(), ts: Date.now() })
+            const chatPath = `${BUSINESS_APPLICATION_PATH}/${clientId}/requirements/${safeReqName}/chat`
+            await firebaseRestPush(chatPath, { senderRole: "admin", senderUid: currentUser.uid, text: note.trim(), ts: Date.now() }, idToken)
           } catch (err) {
             // non-fatal
             console.error("Failed to push rejection note to requirement chat:", err)
           }
         }
       } else {
-        await update(currentFileRef, payload)
+        const filePath = `${BUSINESS_APPLICATION_PATH}/${clientId}/requirements/${safeReqName}/files/${safeFileId}`
+        if (process.env.NODE_ENV !== "production") {
+          console.debug("persistDocumentStatus: updating single file status via REST", {
+            clientId,
+            path: filePath,
+            updatePayload: { status: cleanPayload.status, adminNote: cleanPayload.adminNote ?? "" },
+          })
+        }
+        await firebaseRestUpdate(filePath, {
+          status: cleanPayload.status,
+          adminNote: cleanPayload.adminNote ?? "",
+        }, idToken)
         // If rejected with a note, also send the rejection note to the requirement chat so the applicant sees it
         if (status === "rejected" && note && note.trim()) {
           try {
-            const chatRef = ref(realtimeDb, `${BUSINESS_APPLICATION_PATH}/${id}/requirements/${targetDocument.requirement.name}/chat`)
-            await push(chatRef, { senderRole: "admin", senderUid: currentUser.uid, text: note.trim(), ts: Date.now() })
+            const chatPath = `${BUSINESS_APPLICATION_PATH}/${clientId}/requirements/${safeReqName}/chat`
+            await firebaseRestPush(chatPath, { senderRole: "admin", senderUid: currentUser.uid, text: note.trim(), ts: Date.now() }, idToken)
           } catch (err) {
             // non-fatal
             console.error("Failed to push rejection note to requirement chat:", err)
@@ -502,6 +845,8 @@ function ClientRequirementsContent() {
   }
 
   const handleApprove = async () => {
+    const auth = getAuthInstance()
+    console.debug("[handleApprove] Called, isAuthReady:", isAuthReady, "auth.currentUser:", auth?.currentUser?.uid ?? "null")
     if (!activeDocument) {
       return
     }
@@ -513,6 +858,8 @@ function ClientRequirementsContent() {
   }
 
   const handleRejectConfirm = async () => {
+    const auth = getAuthInstance()
+    console.debug("[handleRejectConfirm] Called, isAuthReady:", isAuthReady, "auth.currentUser:", auth?.currentUser?.uid ?? "null")
     if (!activeDocument || !rejectReason.trim()) {
       return
     }
@@ -567,23 +914,40 @@ function ClientRequirementsContent() {
     setFormPreviewTempUrls([])
 
     try {
-      const currentUser = firebaseAuth.currentUser
+      const currentUser = getAuthInstance()?.currentUser
       if (!currentUser) {
         toast.error("You must be logged in to preview the application form.")
         router.replace("/")
         return
       }
 
-      const token = await currentUser.getIdToken()
-      const response = await fetch("/api/export/docx-to-pdf", {
+      // Always force-refresh token to avoid stale/expired auth when previewing
+      let token = await currentUser.getIdToken(true)
+      let response = await fetch("/api/export/docx-to-pdf", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
+          // Allow local development bypass (ignored in production)
+          "x-dev-bypass": process.env.NODE_ENV !== "production" ? "1" : "0",
         },
         body: JSON.stringify({ applicationId: id }),
         signal: formPreviewAbortRef.current?.signal,
       })
+
+      if (response.status === 401) {
+        token = await currentUser.getIdToken(true)
+        response = await fetch("/api/export/docx-to-pdf", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            "x-dev-bypass": process.env.NODE_ENV !== "production" ? "1" : "0",
+          },
+          body: JSON.stringify({ applicationId: id }),
+          signal: formPreviewAbortRef.current?.signal,
+        })
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
@@ -658,7 +1022,7 @@ function ClientRequirementsContent() {
         setIsFormPreviewLoading(false)
       }
     }
-  }, [client, cleanupFormPreviewUrls, convertImageBlobToPdfUrl, formPreviewTempUrls, id, router])
+  }, [client, cleanupFormPreviewUrls, convertImageBlobToPdfUrl, formPreviewTempUrls, getAuthInstance, id, router])
 
   const handleCloseFormPreview = useCallback(() => {
     // signal cancellation to any in-flight preview work and abort network requests
@@ -679,10 +1043,12 @@ function ClientRequirementsContent() {
     if (!client) return
 
     const prev = previousFilesRef.current
-    const multiUpdates: Record<string, any> = {}
+    const filesToUpdate: Array<{ path: string; data: Record<string, unknown> }> = []
     let hasReplacement = false
+    const updatedAt = Date.now()
 
     client.requirements.forEach((requirement) => {
+      const safeReqName = sanitizeKey(requirement.name || "requirement")
       requirement.files.forEach((file) => {
         const key = `${requirement.name}::${file.id}`
         const normalizedStatus = (file.status ?? "").toLowerCase()
@@ -696,9 +1062,9 @@ function ClientRequirementsContent() {
           prevEntry.status === "rejected" &&
           (normalizedStatus !== "rejected" || fileHash !== prevEntry.fileHash || fileSize !== prevEntry.fileSize || fileName !== prevEntry.fileName)
         ) {
-          const basePath = `${BUSINESS_APPLICATION_PATH}/${client.id}/requirements/${requirement.name}/files/${file.id}`
-          multiUpdates[`${basePath}/status`] = "updated"
-          multiUpdates[`${basePath}/uploadedAt`] = Date.now()
+          const safeFileId = sanitizeKey(file.id || "file")
+          const filePath = `${BUSINESS_APPLICATION_PATH}/${client.id}/requirements/${safeReqName}/files/${safeFileId}`
+          filesToUpdate.push({ path: filePath, data: { status: "updated", uploadedAt: updatedAt } })
           hasReplacement = true
         }
 
@@ -708,16 +1074,24 @@ function ClientRequirementsContent() {
 
     if (!hasReplacement) return
 
-    multiUpdates[`${BUSINESS_APPLICATION_PATH}/${client.id}/status`] = "Pending Update Review"
+    const clientStatusPath = `${BUSINESS_APPLICATION_PATH}/${client.id}/status`
 
     ;(async () => {
       try {
-        await update(ref(realtimeDb), multiUpdates)
+        const auth = getAuthInstance()
+        const currentUser = auth?.currentUser
+        if (!currentUser) return
+        const idToken = await currentUser.getIdToken()
+
+        // Update all file statuses
+        await Promise.all(filesToUpdate.map((f) => firebaseRestUpdate(f.path, f.data, idToken)))
+        // Update client status
+        await firebaseRestSet(clientStatusPath, "Pending Update Review", idToken)
       } catch (err) {
         console.error("Failed to mark replaced requirement as updated", err)
       }
     })()
-  }, [client])
+  }, [client, getAuthInstance])
 
   useEffect(() => {
     if (!client) return

@@ -2,6 +2,8 @@ import { readFile } from 'fs/promises'
 import path from 'path'
 import { NextResponse } from 'next/server'
 
+export const dynamic = "force-static"
+
 type BusinessEntry = {
   meta?: {
     applicantUid?: string

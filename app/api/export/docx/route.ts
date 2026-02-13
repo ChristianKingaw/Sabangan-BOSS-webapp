@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { adminAuth, adminDb } from "@/lib/firebase-admin"
-import { renderFromTemplate } from "@/lib/docx/renderFromTemplate"
-import fs from "fs"
-import path from "path"
+import { renderFromTemplateBuffer } from "@/lib/docx/renderFromTemplate"
+import { loadTemplateBuffer } from "@/lib/docx/loadTemplateBuffer"
+import { getRequestPublicOrigin } from "@/lib/http/getRequestPublicOrigin"
 import { mapApplicationToTemplate } from "@/lib/export/mapApplicationToTemplate"
 import { BUSINESS_APPLICATION_PATH } from "@/lib/business-applications"
 
 // Force Node.js runtime for this route (required for file system operations)
 export const runtime = "nodejs"
+
+// Avoid prerendering; must run at request time to access credentials/files
+export const dynamic = "force-dynamic"
+export const revalidate = 0
 
 // Request body schema
 const ExportRequestSchema = z.object({
@@ -127,6 +131,7 @@ export async function POST(request: NextRequest) {
 
     const applicationData = snapshot.val()
     const formData = applicationData?.form ?? {}
+    const publicOrigin = getRequestPublicOrigin(request)
 
     // 4. Map database fields to template tags
     const templateData = mapApplicationToTemplate(formData)
@@ -146,23 +151,15 @@ export async function POST(request: NextRequest) {
       console.error("Error determining templatePath, falling back to default:", tplErr)
     }
     console.log("Using DOCX template:", templatePath)
-    // ensure template exists so errors are clearer
-    const absoluteTemplate = path.resolve(process.cwd(), templatePath)
-    if (!fs.existsSync(absoluteTemplate)) {
-      console.error("DOCX template not found:", absoluteTemplate)
-      return NextResponse.json(
-        { error: "Template file not found on server" },
-        { status: 500 }
-      )
-    }
 
     let docxBuffer: Buffer
     try {
-      docxBuffer = renderFromTemplate(templatePath, templateData)
+      const templateBuffer = await loadTemplateBuffer(templatePath, publicOrigin)
+      docxBuffer = renderFromTemplateBuffer(templateBuffer, templateData)
     } catch (renderErr) {
       console.error("Error rendering DOCX template:", renderErr)
       return NextResponse.json(
-        { error: "Failed to render document", details: String(renderErr) },
+        { error: "Template file not found on server", details: String(renderErr) },
         { status: 500 }
       )
     }

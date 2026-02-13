@@ -1,57 +1,93 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { adminAuth, adminDb } from "@/lib/firebase-admin"
-import { renderFromTemplate } from "@/lib/docx/renderFromTemplate"
-import fs from "fs"
-import os from "os"
-import path from "path"
+import { renderFromTemplateBuffer } from "@/lib/docx/renderFromTemplate"
+import { loadTemplateBuffer } from "@/lib/docx/loadTemplateBuffer"
+import { getRequestPublicOrigin } from "@/lib/http/getRequestPublicOrigin"
 import { mapApplicationToTemplate } from "@/lib/export/mapApplicationToTemplate"
 import { BUSINESS_APPLICATION_PATH } from "@/lib/business-applications"
-import { spawn } from "child_process"
 import { PDFDocument } from "pdf-lib"
 
 export const runtime = "nodejs"
+
+// Needs runtime execution for auth and LibreOffice; disable prerendering
+export const dynamic = "force-dynamic"
+export const revalidate = 0
 
 const ExportRequestSchema = z.object({
   applicationId: z.string().min(1),
 })
 
-async function convertDocxToPdfBuffer(docxBuffer: Buffer): Promise<Buffer> {
-  // Write DOCX to a temp file
-  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "docx-to-pdf-"))
-  const inputPath = path.join(tmpDir, "input.docx")
-  const outputPath = path.join(tmpDir, "input.pdf")
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
-  await fs.promises.writeFile(inputPath, docxBuffer)
+function toConverterDocxEndpoint(value: string): string {
+  const base = value.trim().replace(/\/+$/, "")
 
-  // Invoke LibreOffice (soffice) to convert to PDF. Requires LibreOffice to be installed on the server.
-  // Command: soffice --headless --convert-to pdf --outdir <tmpDir> <inputPath>
-  await new Promise<void>((resolve, reject) => {
-    const args = ["--headless", "--convert-to", "pdf", "--outdir", tmpDir, inputPath]
-    const proc = spawn("soffice", args, { stdio: "ignore" })
-    proc.on("error", (err) => reject(err))
-    proc.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`soffice exited ${code}`))))
-  })
-
-  const pdfExists = await fs.promises
-    .access(outputPath, fs.constants.R_OK)
-    .then(() => true)
-    .catch(() => false)
-
-  if (!pdfExists) {
-    throw new Error("PDF conversion failed: output not found")
+  if (base.endsWith("/convert/docx-to-pdf") || base.endsWith("/api/convert/docx-to-pdf")) {
+    return base
+  }
+  if (base.endsWith("/convert") || base.endsWith("/api/convert")) {
+    return `${base}/docx-to-pdf`
   }
 
-  const pdfBuffer = await fs.promises.readFile(outputPath)
+  return `${base}/convert/docx-to-pdf`
+}
 
-  // cleanup
-  try {
-    await fs.promises.unlink(inputPath)
-    await fs.promises.unlink(outputPath)
-    await fs.promises.rmdir(tmpDir)
-  } catch {}
+function getConverterEndpoints(requestOrigin: string): string[] {
+  const candidates: string[] = []
 
-  return pdfBuffer
+  const configured =
+    process.env.CONVERTER_SERVICE_URL ||
+    process.env.CONVERTER_BASE_URL ||
+    process.env.NEXT_PUBLIC_CONVERTER_SERVICE_URL
+
+  if (configured) {
+    candidates.push(toConverterDocxEndpoint(configured))
+  }
+
+  // Production path via Firebase Hosting rewrite -> Cloud Run converter service.
+  candidates.push(toConverterDocxEndpoint(`${requestOrigin}/api/convert`))
+  // Local Docker container fallback.
+  candidates.push("http://127.0.0.1:8080/convert/docx-to-pdf")
+
+  return [...new Set(candidates)]
+}
+
+async function convertDocxToPdfBuffer(docxBuffer: Buffer, converterEndpoints: string[]): Promise<Buffer> {
+  const errors: string[] = []
+
+  for (const endpoint of converterEndpoints) {
+    try {
+      const form = new FormData()
+      const payload = new Uint8Array(docxBuffer.length)
+      payload.set(docxBuffer)
+      form.append("file", new Blob([payload], { type: DOCX_MIME }), "input.docx")
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        body: form,
+        cache: "no-store",
+      })
+
+      if (!response.ok) {
+        const bodyText = await response.text().catch(() => "")
+        throw new Error(`HTTP ${response.status} ${response.statusText} ${bodyText}`.trim())
+      }
+
+      const pdfBuffer = Buffer.from(await response.arrayBuffer())
+      if (!pdfBuffer.length) {
+        throw new Error("Empty PDF payload returned by converter")
+      }
+
+      return pdfBuffer
+    } catch (err) {
+      errors.push(`${endpoint} -> ${String(err)}`)
+    }
+  }
+
+  throw new Error(
+    `Converter service unreachable. Tried: ${converterEndpoints.join(", ")}. Errors: ${errors.join(" | ")}`
+  )
 }
 
 async function mergePdfBuffers(buffers: Buffer[]): Promise<Buffer> {
@@ -70,19 +106,27 @@ async function mergePdfBuffers(buffers: Buffer[]): Promise<Buffer> {
 export async function POST(request: NextRequest) {
   try {
     const authHeader = request.headers.get("Authorization")
-    if (!authHeader?.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Missing or invalid Authorization header" }, { status: 401 })
-    }
+    const isDev = process.env.NODE_ENV !== "production"
+    const devBypass = isDev && request.headers.get("x-dev-bypass") === "1"
 
-    if (!adminAuth) {
-      return NextResponse.json({ error: "Server misconfigured: Firebase Admin not initialized" }, { status: 500 })
-    }
+    if (devBypass) {
+      console.warn("Development bypass enabled for DOCX->PDF export request")
+    } else {
+      if (!authHeader?.startsWith("Bearer ")) {
+        return NextResponse.json({ error: "Missing or invalid Authorization header" }, { status: 401 })
+      }
 
-    const idToken = authHeader.slice(7)
-    try {
-      await adminAuth.verifyIdToken(idToken)
-    } catch (err) {
-      return NextResponse.json({ error: "Invalid or expired authentication token" }, { status: 401 })
+      if (!adminAuth) {
+        return NextResponse.json({ error: "Server misconfigured: Firebase Admin not initialized" }, { status: 500 })
+      }
+
+      const idToken = authHeader.slice(7)
+      try {
+        await adminAuth.verifyIdToken(idToken)
+      } catch (err) {
+        console.error("Token verification failed (docx-to-pdf)", err)
+        return NextResponse.json({ error: "Invalid or expired authentication token" }, { status: 401 })
+      }
     }
 
     let body: any
@@ -112,6 +156,7 @@ export async function POST(request: NextRequest) {
 
     const applicationData = snapshot.val()
     const formData = applicationData?.form ?? {}
+    const publicOrigin = getRequestPublicOrigin(request)
 
     const templateData = mapApplicationToTemplate(formData)
 
@@ -127,22 +172,23 @@ export async function POST(request: NextRequest) {
       }
     } catch {}
 
-    const absoluteTemplate = path.resolve(process.cwd(), templatePath)
-    if (!fs.existsSync(absoluteTemplate)) {
-      return NextResponse.json({ error: "Template file not found on server" }, { status: 500 })
-    }
-
     let docxBuffer: Buffer
     try {
-      docxBuffer = renderFromTemplate(templatePath, templateData)
+      const mainTemplateBuffer = await loadTemplateBuffer(templatePath, publicOrigin)
+      docxBuffer = renderFromTemplateBuffer(mainTemplateBuffer, templateData)
     } catch (err) {
-      return NextResponse.json({ error: "Failed to render document", details: String(err) }, { status: 500 })
+      return NextResponse.json(
+        { error: "Template file not found on server", details: String(err) },
+        { status: 500 }
+      )
     }
 
     let pdfBuffer: Buffer
     try {
+      const converterEndpoints = getConverterEndpoints(request.nextUrl.origin)
+
       // Convert main docx to PDF
-      const mainPdf = await convertDocxToPdfBuffer(docxBuffer)
+      const mainPdf = await convertDocxToPdfBuffer(docxBuffer, converterEndpoints)
 
       // If not swornOnly, try to also render/convert the sworn template and merge PDFs
       if (!swornOnly) {
@@ -159,13 +205,13 @@ export async function POST(request: NextRequest) {
           } catch {}
 
           if (swornTemplatePath) {
-            const absSworn = path.resolve(process.cwd(), swornTemplatePath)
-            if (fs.existsSync(absSworn)) {
-              const swornDocx = renderFromTemplate(swornTemplatePath, templateData)
-              const swornPdf = await convertDocxToPdfBuffer(swornDocx)
+            try {
+              const swornTemplateBuffer = await loadTemplateBuffer(swornTemplatePath, publicOrigin)
+              const swornDocx = renderFromTemplateBuffer(swornTemplateBuffer, templateData)
+              const swornPdf = await convertDocxToPdfBuffer(swornDocx, converterEndpoints)
               // Merge main + sworn
               pdfBuffer = await mergePdfBuffers([mainPdf, swornPdf])
-            } else {
+            } catch {
               // sworn template missing; return main PDF
               pdfBuffer = mainPdf
             }
@@ -183,9 +229,16 @@ export async function POST(request: NextRequest) {
       }
     } catch (err) {
       const errStr = String(err || "")
-      // If the error is from soffice/LibreOffice or missing binary, don't log full stack to avoid noisy errors.
-      if (errStr.toLowerCase().includes("soffice") || errStr.toLowerCase().includes("enoent")) {
-        console.warn("Server-side PDF conversion unavailable; soffice failed:", errStr)
+      const lowerErr = errStr.toLowerCase()
+      // Keep conversion-path errors as warnings (common when converter service is down).
+      if (
+        lowerErr.includes("converter") ||
+        lowerErr.includes("econnrefused") ||
+        lowerErr.includes("fetch failed") ||
+        lowerErr.includes("soffice") ||
+        lowerErr.includes("enoent")
+      ) {
+        console.warn("Server-side PDF conversion unavailable; converter service failed:", errStr)
         return NextResponse.json({ error: "Failed to convert to PDF", details: errStr }, { status: 500 })
       }
 
