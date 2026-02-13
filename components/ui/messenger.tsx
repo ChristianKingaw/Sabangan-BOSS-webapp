@@ -1,11 +1,11 @@
 "use client"
 
 import { useEffect, useState, useRef } from "react"
-import { realtimeDb } from "@/database/firebase"
+import { realtimeDb, app } from "@/database/firebase"
 import { BUSINESS_APPLICATION_PATH, normalizeBusinessApplication } from "@/lib/business-applications"
 import { MAYORS_CLEARANCE_APPLICATION_PATH, normalizeClearanceApplicant, buildClearanceMessengerThreadId } from "@/lib/clearance-applications"
-import { ref, onValue, push, off } from "firebase/database"
-import { getAuth } from "firebase/auth"
+import { ref, onValue, off } from "firebase/database"
+import { getAuth, onAuthStateChanged } from "firebase/auth"
 import { Button } from "@/components/ui/button"
 import { X, ChevronDown } from "lucide-react"
 
@@ -92,6 +92,31 @@ const extractChatMessages = (payload: any, options?: { defaultIssueLabel?: strin
     lastMessageTs: combined.length > 0 ? Math.max(...combined.map((c) => c.ts ?? 0)) : undefined,
     lastClientMessageTs: clientTs.length > 0 ? Math.max(...clientTs) : undefined,
   }
+}
+
+// Firebase RTDB keys cannot include . # $ [ ] or /. Ensure string conversion first.
+const sanitizeKey = (value: unknown) => (String(value ?? "").replace(/[.#$\[\]/]/g, "-") || "-")
+
+// Firebase REST API helper to bypass SDK cache issues
+const FIREBASE_DB_URL = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || ""
+
+async function firebaseRestPush(
+  path: string,
+  data: Record<string, unknown>,
+  idToken: string
+): Promise<string> {
+  const url = `${FIREBASE_DB_URL}/${path}.json?auth=${encodeURIComponent(idToken)}`
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "")
+    throw new Error(`Firebase REST push failed: ${resp.status} ${errText}`)
+  }
+  const result = await resp.json()
+  return result?.name ?? ""
 }
 
 export default function Messenger({
@@ -230,8 +255,8 @@ export default function Messenger({
           }
 
           const normalizedPayload = {
-            ...payload,
-            meta: { applicantUid, ...(payload.meta ?? {}) },
+            ...(payload as any),
+            meta: { applicantUid, ...(((payload as any).meta) ?? {}) },
           }
 
           const normalized = normalizeClearanceApplicant(applicationId, normalizedPayload)
@@ -412,25 +437,50 @@ export default function Messenger({
 
   const handleSend = async () => {
     if (!input.trim() || !selectedAppId) return
-    const auth = getAuth()
-    const user = auth.currentUser
+    const auth = getAuth(app)
+    let user = auth.currentUser
+    
+    // Wait for auth state to restore after page refresh
+    if (!user) {
+      user = await new Promise<typeof auth.currentUser>((resolve) => {
+        let resolved = false
+        const unsubscribe = onAuthStateChanged(auth, (u) => {
+          if (resolved) return
+          if (u) {
+            resolved = true
+            unsubscribe()
+            resolve(u)
+          }
+          // Don't resolve with null immediately - wait for potential restoration
+        })
+        // Timeout after 5 seconds
+        setTimeout(() => {
+          if (!resolved) {
+            resolved = true
+            unsubscribe()
+            resolve(auth.currentUser)
+          }
+        }, 5000)
+      })
+    }
+    
     if (!user) return alert("You must be logged in to send messages.")
 
     try {
       // Allow sending replies to both requirement-level chats and main chat even when
       // the application has historical messages from a local JSON file. Messages
       // will be written to the realtime DB.
-      const app = applications.find((a) => a.id === selectedAppId)
-      if (!app) return
-      if (app.source === "clearance" && !app.applicantUid) {
+      const appItem = applications.find((a) => a.id === selectedAppId)
+      if (!appItem) return
+      if (appItem.source === "clearance" && !appItem.applicantUid) {
         alert("Missing applicant information for this clearance conversation.")
         return
       }
 
       const basePath =
-        app.source === "clearance"
-          ? `${MAYORS_CLEARANCE_APPLICATION_PATH}/${app.applicantUid}/${app.applicationId}`
-          : `${BUSINESS_APPLICATION_PATH}/${app.applicationId}`
+        appItem.source === "clearance"
+          ? `${MAYORS_CLEARANCE_APPLICATION_PATH}/${appItem.applicantUid}/${appItem.applicationId}`
+          : `${BUSINESS_APPLICATION_PATH}/${appItem.applicationId}`
 
       const payload = {
         senderRole: "admin",
@@ -440,12 +490,19 @@ export default function Messenger({
         inReplyTo: replyTarget?.messageId ?? null,
       }
 
+      // Ensure we don't send any prototype/circular data and keep keys RTDB-safe
+      const cleanPayload = JSON.parse(JSON.stringify(payload))
+      
+      // Get fresh ID token for REST API
+      const idToken = await user.getIdToken(true)
+
       if (replyTarget && replyTarget.reqName) {
-        const reqChatRef = ref(realtimeDb, `${basePath}/requirements/${replyTarget.reqName}/chat`)
-        await push(reqChatRef, payload)
+        const safeReq = sanitizeKey(replyTarget.reqName)
+        const chatPath = `${basePath}/requirements/${safeReq}/chat`
+        await firebaseRestPush(chatPath, cleanPayload, idToken)
       } else {
-        const chatRef = ref(realtimeDb, `${basePath}/chat`)
-        await push(chatRef, payload)
+        const chatPath = `${basePath}/chat`
+        await firebaseRestPush(chatPath, cleanPayload, idToken)
       }
 
       setInput("")

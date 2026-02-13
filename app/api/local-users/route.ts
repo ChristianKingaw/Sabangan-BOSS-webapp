@@ -2,6 +2,8 @@ import { readFile } from 'fs/promises'
 import path from 'path'
 import { NextResponse } from 'next/server'
 
+export const dynamic = "force-static"
+
 export async function GET() {
   try {
     const p = path.resolve(process.cwd(), 'database', 'data', 'data.json')

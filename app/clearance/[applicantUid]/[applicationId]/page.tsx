@@ -3,13 +3,13 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import Image from "next/image"
-import { onValue, ref, update } from "firebase/database"
-import { getAuth, onAuthStateChanged } from "firebase/auth"
+import { onValue, ref } from "firebase/database"
+import { onAuthStateChanged } from "firebase/auth"
 import { ArrowLeft, CheckCircle, ChevronLeft, ChevronRight, Loader2, X, XCircle } from "lucide-react"
 import Header from "@/components/header"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
-import { app as firebaseApp, realtimeDb } from "@/database/firebase"
+import { realtimeDb, auth as firebaseAuth } from "@/database/firebase"
 import { getStatusBadge, type BusinessRequirement } from "@/lib/business-applications"
 import {
   MAYORS_CLEARANCE_APPLICATION_PATH,
@@ -19,7 +19,25 @@ import {
 import { renderAsync } from "docx-preview"
 import { handlePrintHtml } from "@/lib/print"
 
-const firebaseAuth = getAuth(firebaseApp)
+// Helper to sanitize keys for Firebase RTDB paths
+const sanitizeKey = (key: string) => key.replace(/[.#$\/\[\]]/g, "_")
+
+// Firebase REST API URL
+const FIREBASE_DATABASE_URL = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL
+
+// REST API helper to bypass SDK cache issues
+const firebaseRestUpdate = async (path: string, data: Record<string, unknown>, idToken: string) => {
+  const url = `${FIREBASE_DATABASE_URL}/${path}.json?auth=${idToken}`
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+  if (!response.ok) {
+    throw new Error(`Firebase REST update failed: ${response.status} ${response.statusText}`)
+  }
+  return response.json()
+}
 
 type LocalDocumentStatus = {
   status: "approved" | "rejected" | "awaiting-review"
@@ -63,14 +81,80 @@ function ClearanceRequirementsContent() {
     Map<string, { fileName: string; fileSize: number; fileHash: string; status: string }>
   >(new Map())
 
+  // Wait for Firebase Auth to be ready
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
+    if (!firebaseAuth) {
       setIsAuthReady(true)
-      if (!user) {
-        router.replace("/")
-      }
-    })
-    return () => unsubscribe()
+      return
+    }
+
+    const auth = firebaseAuth // Local reference for type narrowing
+    let cancelled = false
+    
+    const waitForAuth = async () => {
+      // Wait for auth state with polling for IndexedDB restoration
+      await new Promise<void>((resolve) => {
+        let resolved = false
+        let delayTimeoutId: NodeJS.Timeout | null = null
+        let pollIntervalId: NodeJS.Timeout | null = null
+        
+        const cleanup = () => {
+          if (delayTimeoutId) clearTimeout(delayTimeoutId)
+          if (pollIntervalId) clearInterval(pollIntervalId)
+        }
+        
+        // Poll every 100ms to check if user was restored
+        pollIntervalId = setInterval(() => {
+          if (!resolved && auth.currentUser) {
+            resolved = true
+            cleanup()
+            unsubscribe()
+            resolve()
+          }
+        }, 100)
+        
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+          if (resolved) return
+          if (user) {
+            resolved = true
+            cleanup()
+            unsubscribe()
+            resolve()
+          } else {
+            // Wait 3 seconds for IndexedDB restoration
+            if (!delayTimeoutId) {
+              delayTimeoutId = setTimeout(() => {
+                if (!resolved) {
+                  resolved = true
+                  cleanup()
+                  unsubscribe()
+                  resolve()
+                }
+              }, 3000)
+            }
+          }
+        })
+        
+        // Ultimate timeout after 6 seconds
+        setTimeout(() => {
+          if (!resolved) {
+            resolved = true
+            cleanup()
+            unsubscribe()
+            resolve()
+          }
+        }, 6000)
+      })
+      
+      if (cancelled) return
+      setIsAuthReady(true)
+    }
+    
+    waitForAuth()
+    
+    return () => {
+      cancelled = true
+    }
   }, [router])
 
   const requirements = application?.requirements ?? []
@@ -157,8 +241,7 @@ function ClearanceRequirementsContent() {
     if (!application) return
 
     const prev = previousFilesRef.current
-    const multiUpdates: Record<string, any> = {}
-    let hasReplacement = false
+    const replacedFiles: Array<{ requirementName: string; fileId: string }> = []
 
     application.requirements.forEach((requirement) => {
       requirement.files.forEach((file) => {
@@ -174,22 +257,38 @@ function ClearanceRequirementsContent() {
           prevEntry.status === "rejected" &&
           (normalizedStatus !== "rejected" || fileHash !== prevEntry.fileHash || fileSize !== prevEntry.fileSize || fileName !== prevEntry.fileName)
         ) {
-          const basePath = `${MAYORS_CLEARANCE_APPLICATION_PATH}/${applicantUid}/${application.id}/requirements/${requirement.name}/files/${file.id}`
-          multiUpdates[`${basePath}/status`] = "updated"
-          multiUpdates[`${basePath}/uploadedAt`] = Date.now()
-          multiUpdates[`${MAYORS_CLEARANCE_APPLICATION_PATH}/${applicantUid}/${application.id}/status`] = "Pending Update Review"
-          hasReplacement = true
+          replacedFiles.push({ requirementName: requirement.name, fileId: file.id })
         }
 
         prev.set(key, { fileName, fileSize, fileHash, status: normalizedStatus })
       })
     })
 
-    if (!hasReplacement) return
+    if (replacedFiles.length === 0) return
 
+    // Use REST API to update replaced files (requires auth)
     ;(async () => {
+      const currentUser = firebaseAuth?.currentUser
+      if (!currentUser) {
+        console.warn("Cannot mark replaced files as updated - user not authenticated")
+        return
+      }
+
       try {
-        await update(ref(realtimeDb), multiUpdates)
+        const idToken = await currentUser.getIdToken(true)
+        const timestamp = Date.now()
+
+        // Update each replaced file using REST API
+        for (const { requirementName, fileId } of replacedFiles) {
+          const safeReqName = sanitizeKey(requirementName)
+          const safeFileId = sanitizeKey(fileId)
+          const path = `${MAYORS_CLEARANCE_APPLICATION_PATH}/${applicantUid}/${application.id}/requirements/${safeReqName}/files/${safeFileId}`
+          await firebaseRestUpdate(path, { status: "updated", uploadedAt: timestamp }, idToken)
+        }
+
+        // Update application status
+        const statusPath = `${MAYORS_CLEARANCE_APPLICATION_PATH}/${applicantUid}/${application.id}`
+        await firebaseRestUpdate(statusPath, { status: "Pending Update Review" }, idToken)
       } catch (err) {
         console.error("Failed to mark replaced clearance requirement as updated", err)
       }
@@ -229,36 +328,44 @@ function ClearanceRequirementsContent() {
       return
     }
 
-    const currentUser = firebaseAuth.currentUser
+    const currentUser = firebaseAuth?.currentUser
     if (!currentUser) {
       toast.error("You must be logged in to update document status.")
       router.replace("/")
       return
     }
 
+    // Get fresh ID token for REST API calls
+    let idToken: string
+    try {
+      idToken = await currentUser.getIdToken(true)
+    } catch (tokenErr) {
+      console.error("Failed to get ID token", tokenErr)
+      toast.error("Authentication error. Please refresh and try again.")
+      return
+    }
+
     try {
       setIsPersisting(true)
 
-      const currentFileRef = ref(
-        realtimeDb,
-        `${MAYORS_CLEARANCE_APPLICATION_PATH}/${applicantUid}/${applicationId}/requirements/${targetDocument.requirement.name}/files/${targetDocument.file.id}`
-      )
+      const safeReqName = sanitizeKey(targetDocument.requirement.name || "requirement")
+      const safeFileId = sanitizeKey(targetDocument.file.id || "file")
 
       const payload: { status: string; adminNote?: string } = { status }
       if (status === "rejected") payload.adminNote = note ?? ""
       else if (status === "approved") payload.adminNote = ""
 
+      // Use REST API to bypass SDK cache issues
       if (targetDocument.requirement.files && targetDocument.requirement.files.length === 2) {
         const updates = targetDocument.requirement.files.map((f) => {
-          const fileRef = ref(
-            realtimeDb,
-            `${MAYORS_CLEARANCE_APPLICATION_PATH}/${applicantUid}/${applicationId}/requirements/${targetDocument.requirement.name}/files/${f.id}`
-          )
-          return update(fileRef, payload)
+          const safeFId = sanitizeKey(f.id || "file")
+          const path = `${MAYORS_CLEARANCE_APPLICATION_PATH}/${applicantUid}/${applicationId}/requirements/${safeReqName}/files/${safeFId}`
+          return firebaseRestUpdate(path, payload, idToken)
         })
         await Promise.all(updates)
       } else {
-        await update(currentFileRef, payload)
+        const path = `${MAYORS_CLEARANCE_APPLICATION_PATH}/${applicantUid}/${applicationId}/requirements/${safeReqName}/files/${safeFileId}`
+        await firebaseRestUpdate(path, payload, idToken)
       }
 
       setDocumentStatuses((prev) => {

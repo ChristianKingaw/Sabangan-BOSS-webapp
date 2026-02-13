@@ -1,0 +1,17 @@
+{
+  "name": "cloud-run-converter",
+  "version": "1.0.0",
+  "description": "Cloud Run service for DOCX/PDF conversion using LibreOffice",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "multer": "^1.4.5-lts.1",
+    "pdf-lib": "^1.17.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,6 +1,10 @@
 "use client"
 
+// Disable prerendering for the client dashboard to avoid Firebase auth init during static build
+export const dynamic = "force-dynamic"
+
 import { useState, useEffect, useCallback, useMemo, useRef, type FormEvent, type MouseEvent, type ReactNode } from "react"
+import "firebase/auth"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   LogIn,
@@ -37,9 +41,18 @@ import Messenger from "@/components/ui/messenger"
 import ExcelJS from "exceljs"
 import { renderAsync } from "docx-preview"
 import { app as firebaseApp, realtimeDb } from "@/database/firebase"
-import { saveClearanceFile, subscribeToClearanceFiles, clearClearanceFiles, type ClearanceFileWithId } from "@/database/clearance"
+import { saveClearanceFile, type ClearanceFileWithId, fetchClearanceFilesOnce } from "@/database/clearance"
 import { findStaffByEmail, updateStaffEmailVerificationStatus } from "@/database/staff"
-import { getAuth, onAuthStateChanged, sendEmailVerification, signInWithEmailAndPassword, signOut } from "firebase/auth"
+import "firebase/auth"
+import {
+  browserLocalPersistence,
+  getAuth,
+  initializeAuth,
+  onAuthStateChanged,
+  sendEmailVerification,
+  signInWithEmailAndPassword,
+  signOut,
+} from "firebase/auth"
 import { FirebaseError } from "firebase/app"
 import { onValue, ref, off, get, update } from "firebase/database"
 import { cn } from "@/lib/utils"
@@ -409,9 +422,50 @@ async function hashPassword(value: string) {
   return createHash("sha256").update(value).digest("hex")
 }
 
-const firebaseAuth = getAuth(firebaseApp)
-
 export default function HomePage() {
+  const authRef = useRef<ReturnType<typeof getAuth> | null>(null)
+
+  const getAuthInstance = useCallback(() => {
+    if (authRef.current) return authRef.current
+    if (typeof window === "undefined") {
+      return null
+    }
+
+    // Force-load the auth module synchronously to ensure the component registers before first use
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require("firebase/auth")
+    } catch {}
+
+    // Prefer initializeAuth first to force component registration; fall back to getAuth if already initialized
+    try {
+      authRef.current = initializeAuth(firebaseApp, { persistence: browserLocalPersistence })
+      return authRef.current
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("already exists")) {
+        try {
+          authRef.current = getAuth(firebaseApp)
+          return authRef.current
+        } catch (getAuthErr) {
+          console.warn("Auth getAuth retry failed", getAuthErr)
+        }
+      } else if (err instanceof Error && err.message.includes("Component auth has not been registered yet")) {
+        console.warn("Auth module not registered; ensure firebase/auth is imported", err)
+      } else {
+        console.warn("Auth initialize failed", err)
+      }
+    }
+
+    // Final attempt
+    try {
+      authRef.current = getAuth(firebaseApp)
+    } catch (finalErr) {
+      console.warn("Auth final init failed", finalErr)
+      authRef.current = null
+    }
+    return authRef.current
+  }, [])
+
   // Sworn docx preview modal state for main table
   const [isSwornDocxPreviewOpen, setIsSwornDocxPreviewOpen] = useState(false);
   const [swornDocxPreviewHtml, setSwornDocxPreviewHtml] = useState<string | null>(null);
@@ -431,7 +485,8 @@ export default function HomePage() {
     setIsSwornDocxPreviewOpen(true);
     setSwornDocxPreviewLoading(true);
     try {
-      const currentUser = firebaseAuth.currentUser;
+      const auth = getAuthInstance();
+      const currentUser = auth?.currentUser;
       if (!currentUser) {
         setSwornDocxPreviewError("You must be logged in to preview documents.");
         setSwornDocxPreviewLoading(false);
@@ -789,29 +844,17 @@ export default function HomePage() {
     }
 
     try {
-      if (!selectedClearanceFile) {
-        const generated = await generateAndSaveClearanceFileRef.current?.(clearanceRecordYear)
-        if (!generated) {
-          toast.error(`No saved clearance file found for ${clearanceRecordYear}.`)
-          return
-        }
-        const blob = base64ToBlob(generated.base64)
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement("a")
-        a.href = url
-        a.download = generated.fileName
-        document.body.appendChild(a)
-        a.click()
-        a.remove()
-        URL.revokeObjectURL(url)
+      // Always regenerate the file with fresh data to ensure all current records are included
+      const generated = await generateAndSaveClearanceFileRef.current?.(clearanceRecordYear)
+      if (!generated) {
+        toast.error(`No approved records found for ${clearanceRecordYear}.`)
         return
       }
-
-      const blob = base64ToBlob(selectedClearanceFile.dataBase64)
+      const blob = base64ToBlob(generated.base64)
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `Mayor's Clearance ${clearanceRecordYear}.xlsx`
+      a.download = generated.fileName
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -921,6 +964,13 @@ export default function HomePage() {
     const { record, requirementName } = barangayPreview
     const activeDoc = barangayActiveDocument
     const fileId = activeDoc?.file.id
+
+    // Synthetic business clearance records (id starts with "business-") cannot be approved here
+    if (record.id.startsWith("business-")) {
+      toast.error("Business application requirements should be managed from the Business Application page.")
+      return
+    }
+
     if (!record.applicantUid) {
       toast.error("Missing applicant information for this application.")
       return
@@ -930,14 +980,26 @@ export default function HomePage() {
       return
     }
 
+    const currentUser = getAuth()?.currentUser
+    if (!currentUser) {
+      toast.error("You must be logged in to update document status.")
+      return
+    }
+
     setIsBarangayActionLoading(true)
     try {
-      const fileRef = ref(
-        realtimeDb,
-        `${MAYORS_CLEARANCE_APPLICATION_PATH}/${record.applicantUid}/${record.id}/requirements/${requirementName}/files/${fileId}`
-      )
+      const idToken = await currentUser.getIdToken(true)
+      const safeReqName = requirementName.replace(/[.#$\/\[\]]/g, "_")
+      const safeFileId = fileId.replace(/[.#$\/\[\]]/g, "_")
+      const path = `${MAYORS_CLEARANCE_APPLICATION_PATH}/${record.applicantUid}/${record.id}/requirements/${safeReqName}/files/${safeFileId}`
+      const url = `${process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL}/${path}.json?auth=${idToken}`
+      const response = await fetch(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "approved", adminNote: "" }),
+      })
+      if (!response.ok) throw new Error(`REST update failed: ${response.status}`)
 
-      await update(fileRef, { status: "approved", adminNote: "" })
       toast.success("Barangay clearance approved.")
       setBarangayPreview(null)
       setBarangaySelectedDocIndex(-1)
@@ -955,6 +1017,13 @@ export default function HomePage() {
     const { record, requirementName } = barangayPreview
     const activeDoc = barangayActiveDocument
     const fileId = activeDoc?.file.id
+
+    // Synthetic business clearance records (id starts with "business-") cannot be rejected here
+    if (record.id.startsWith("business-")) {
+      toast.error("Business application requirements should be managed from the Business Application page.")
+      return
+    }
+
     if (!record.applicantUid) {
       toast.error("Missing applicant information for this application.")
       return
@@ -968,14 +1037,25 @@ export default function HomePage() {
       return
     }
 
+    const currentUser = getAuth()?.currentUser
+    if (!currentUser) {
+      toast.error("You must be logged in to update document status.")
+      return
+    }
+
     setIsBarangayActionLoading(true)
     try {
-      const fileRef = ref(
-        realtimeDb,
-        `${MAYORS_CLEARANCE_APPLICATION_PATH}/${record.applicantUid}/${record.id}/requirements/${requirementName}/files/${fileId}`
-      )
-
-      await update(fileRef, { status: "rejected", adminNote: barangayRejectReason.trim() })
+      const idToken = await currentUser.getIdToken(true)
+      const safeReqName = requirementName.replace(/[.#$\/\[\]]/g, "_")
+      const safeFileId = fileId.replace(/[.#$\/\[\]]/g, "_")
+      const path = `${MAYORS_CLEARANCE_APPLICATION_PATH}/${record.applicantUid}/${record.id}/requirements/${safeReqName}/files/${safeFileId}`
+      const url = `${process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL}/${path}.json?auth=${idToken}`
+      const response = await fetch(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "rejected", adminNote: barangayRejectReason.trim() }),
+      })
+      if (!response.ok) throw new Error(`REST update failed: ${response.status}`)
       toast.success("Barangay clearance rejected.")
       setShowBarangayRejectModal(false)
       setBarangayRejectReason("")
@@ -1196,27 +1276,38 @@ export default function HomePage() {
   }, [])
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
-      if (user) {
-        setIsLoggedIn(true)
-        setLoggedInEmail(user.email ?? null)
-        if (typeof window !== "undefined" && user.email) {
-          localStorage.setItem("bossStaffEmail", user.email.toLowerCase())
-        }
-        setCurrentPage((prev) => (prev === "login" ? "home" : prev))
-      } else {
-        setIsLoggedIn(false)
-        setLoggedInEmail(null)
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("bossStaffEmail")
-        }
-        setCurrentPage("login")
+    let unsubscribe = () => {}
+    try {
+      const auth = getAuthInstance()
+      if (!auth) {
+        setIsAuthChecking(false)
+        return
       }
+      unsubscribe = onAuthStateChanged(auth, (user) => {
+        if (user) {
+          setIsLoggedIn(true)
+          setLoggedInEmail(user.email ?? null)
+          if (typeof window !== "undefined" && user.email) {
+            localStorage.setItem("bossStaffEmail", user.email.toLowerCase())
+          }
+          setCurrentPage((prev) => (prev === "login" ? "home" : prev))
+        } else {
+          setIsLoggedIn(false)
+          setLoggedInEmail(null)
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("bossStaffEmail")
+          }
+          setCurrentPage("login")
+        }
+        setIsAuthChecking(false)
+      })
+    } catch (authError) {
+      console.warn("Auth listener skipped during prerender", authError)
       setIsAuthChecking(false)
-    })
+    }
 
     return () => unsubscribe()
-  }, [])
+  }, [getAuthInstance])
 
   // Persist read notifications to localStorage
   useEffect(() => {
@@ -1466,20 +1557,30 @@ export default function HomePage() {
     return () => clearInterval(interval)
   }, [isLoggedIn, refreshLatestClientTs])
 
-  // Load saved Mayor's Clearance files list
+  // Load saved Mayor's Clearance files list (one-time fetch to avoid heavy realtime churn)
   useEffect(() => {
+    let aborted = false
+
     if (!isLoggedIn) {
       setClearanceFiles([])
       setClearanceFilesLoading(false)
       return
     }
+
     setClearanceFilesLoading(true)
-    const unsub = subscribeToClearanceFiles((rows) => {
-      setClearanceFiles(rows)
-      setClearanceFilesLoading(false)
-    }, () => setClearanceFilesLoading(false))
+    fetchClearanceFilesOnce()
+      .then((rows) => {
+        if (aborted) return
+        setClearanceFiles(rows)
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (aborted) return
+        setClearanceFilesLoading(false)
+      })
+
     return () => {
-      try { unsub() } catch {}
+      aborted = true
     }
   }, [isLoggedIn])
 
@@ -1487,6 +1588,7 @@ export default function HomePage() {
   useEffect(() => {
     if (!isLoggedIn) return
     if (clearanceAutoAttempted) return
+    if (isClearanceGenerating) return
     if (clientsLoading || clearanceFilesLoading) return
     if (approvedClients.length === 0) return
 
@@ -1497,53 +1599,27 @@ export default function HomePage() {
       return
     }
 
-    generateAndSaveClearanceFileRef.current
-      ? generateAndSaveClearanceFileRef.current(currentYear)
-          .catch((err) => {
-            console.error("Auto-generate clearance file failed", err)
-          })
-          .finally(() => setClearanceAutoAttempted(true))
-      : setClearanceAutoAttempted(true)
-  }, [isLoggedIn, clearanceAutoAttempted, clientsLoading, clearanceFilesLoading, approvedClients, clearanceFiles])
-
-  // Watch for any changes to approved clients and regenerate the Mayor's
-  // Clearance file so every update to business clearance status is reflected.
-  const approvedSnapshotRef = useRef<string>("")
-  useEffect(() => {
-    if (!isLoggedIn) return
-    if (clientsLoading) return
-    if (isClearanceGenerating) return
-
-    const targetYear = clearanceRecordYear ?? new Date().getFullYear()
-    const approvalsKey = approvedClients
-      .map((c) => `${c.id}:${(c.overallStatus || c.status || "").toLowerCase()}`)
-      .sort()
-      .join("|")
-    const clearanceKey = approvedClearanceApplicants
-      .map((c) => `${c.id}:${(c.overallStatus || c.status || "").toLowerCase()}`)
-      .sort()
-      .join("|")
-    const fingerprint = `${targetYear}::${approvalsKey}::${clearanceKey}`
-
-    if (approvedSnapshotRef.current === fingerprint) return
-    approvedSnapshotRef.current = fingerprint
-
-    if (approvedClients.length === 0) {
+    if (!generateAndSaveClearanceFileRef.current) {
+      setClearanceAutoAttempted(true)
       return
     }
 
-    // Regenerate the selected-year clearance file to reflect the latest approved clients.
     setIsClearanceGenerating(true)
-    ;(async () => {
-      try {
-        await generateAndSaveClearanceFileRef.current?.(targetYear)
-      } catch (err) {
-        console.error("Auto-regenerate clearance file failed", err)
-      } finally {
+    generateAndSaveClearanceFileRef.current(currentYear)
+      .catch((err) => {
+        console.error("Auto-generate clearance file failed", err)
+      })
+      .finally(() => {
         setIsClearanceGenerating(false)
-      }
-    })()
-  }, [approvedClients, approvedClearanceApplicants, clearanceRecordYear, isLoggedIn, clientsLoading, isClearanceGenerating])
+        setClearanceAutoAttempted(true)
+      })
+  }, [isLoggedIn, clearanceAutoAttempted, isClearanceGenerating, clientsLoading, clearanceFilesLoading, approvedClients, clearanceFiles])
+
+  // Auto-regeneration can be heavy; disable it for stability and rely on manual refresh.
+  // If needed later, re-enable with a safe throttle.
+  // const approvedSnapshotRef = useRef<string>("")
+  // const lastRegenerateAtRef = useRef<number>(0)
+  // useEffect(() => { ... }, [approvedClients, approvedClearanceApplicants, clearanceRecordYear, isLoggedIn, clientsLoading, isClearanceGenerating])
 
   // Recompute global unread indicator whenever relevant state changes.
   useEffect(() => {
@@ -1593,51 +1669,8 @@ export default function HomePage() {
     }
   }, [])
 
-  // Subscribe to application messages in realtime and keep the latest
-  // client message timestamps up to date. Re-subscribe on auth changes
-  // to ensure permissions allow reads when rules require authentication.
-  useEffect(() => {
-    if (!isLoggedIn) {
-      setLatestClientTsMap({})
-      return
-    }
-
-    let businessMap: Record<string, number> = {}
-    let clearanceMap: Record<string, number> = {}
-
-    const recompute = () => {
-      setLatestClientTsMap({ ...businessMap, ...clearanceMap })
-    }
-
-    const businessRef = ref(realtimeDb, BUSINESS_APPLICATION_PATH)
-    const businessUnsub = onValue(businessRef, (snapshot) => {
-      try {
-        const node = snapshot.val() || {}
-        businessMap = buildBusinessLatestClientTsMap(node)
-      } catch {
-        businessMap = {}
-      }
-      recompute()
-    })
-
-    const clearanceRef = ref(realtimeDb, MAYORS_CLEARANCE_APPLICATION_PATH)
-    const clearanceUnsub = onValue(clearanceRef, (snapshot) => {
-      try {
-        const node = snapshot.val() || {}
-        clearanceMap = buildClearanceLatestClientTsMap(node)
-      } catch {
-        clearanceMap = {}
-      }
-      recompute()
-    })
-
-    return () => {
-      try { if (typeof businessUnsub === 'function') businessUnsub() } catch {}
-      try { if (typeof clearanceUnsub === 'function') clearanceUnsub() } catch {}
-      try { off(businessRef) } catch {}
-      try { off(clearanceRef) } catch {}
-    }
-  }, [isLoggedIn])
+  // Realtime listeners for message timestamps are disabled to avoid SDK churn/stack overflows.
+  // Periodic refresh (and explicit calls) still update `latestClientTsMap`.
 
   
 
@@ -1666,7 +1699,11 @@ export default function HomePage() {
 
       // Sign in with Firebase Auth to enable database writes
       try {
-        await signInWithEmailAndPassword(firebaseAuth, normalizedEmail, password)
+        const auth = getAuthInstance()
+        if (!auth) {
+          throw new Error("Unable to initialize authentication. Please refresh and try again.")
+        }
+        await signInWithEmailAndPassword(auth, normalizedEmail, password)
       } catch (authError) {
         if (authError instanceof FirebaseError && authError.code === "auth/user-not-found") {
           throw new Error("Account not found. Please contact an administrator.")
@@ -1677,12 +1714,15 @@ export default function HomePage() {
 
       // Check email verification status
       if (!staffRecord.emailVerified) {
-        const currentUser = firebaseAuth.currentUser
+        const currentUser = getAuthInstance()?.currentUser
         if (currentUser && !currentUser.emailVerified) {
           await sendEmailVerification(currentUser)
           setLoginVerificationStatus("unverified")
           setLoginError("Please verify your email before logging in. We just sent a new verification link.")
-          await signOut(firebaseAuth).catch(() => {})
+          const auth = getAuthInstance()
+          if (auth) {
+            await signOut(auth).catch(() => {})
+          }
           return
         }
 
@@ -1706,7 +1746,10 @@ export default function HomePage() {
   }
 
   const handleLogout = async () => {
-    await signOut(firebaseAuth).catch(() => {})
+    const auth = getAuthInstance()
+    if (auth) {
+      await signOut(auth).catch(() => {})
+    }
     setIsLoggedIn(false)
     handlePageChange("login")
     setEmail("")
@@ -1766,7 +1809,8 @@ export default function HomePage() {
   const handleDownloadApplicationDocs = async (clientId: string, event?: React.MouseEvent) => {
     event?.stopPropagation()
     try {
-      const currentUser = firebaseAuth.currentUser
+      const auth = getAuthInstance()
+      const currentUser = auth?.currentUser
       if (!currentUser) {
         console.error("User not authenticated")
         return
@@ -1842,7 +1886,8 @@ export default function HomePage() {
     }
 
     try {
-      const currentUser = firebaseAuth.currentUser
+      const auth = getAuthInstance()
+      const currentUser = auth?.currentUser
       if (!currentUser) {
         setDocxPreviewError("You must be logged in to preview documents.")
         setDocxPreviewLoading(false)
@@ -2031,10 +2076,17 @@ export default function HomePage() {
 
             // Do not fetch sworn document during preview to avoid creating/duplicating sworn files.
           } else {
-          // If server returned an error, try to inspect details for soffice/ENOENT and fall back
+          // If server returned an error, inspect conversion details and fall back when converter is unavailable
           const errData = await mainResp.json().catch(() => ({}))
           const details = (errData && (errData.details || errData.error || "")) as string
-          if (details.toLowerCase().includes("soffice") || details.toLowerCase().includes("enoent")) {
+          const detailsLower = details.toLowerCase()
+          if (
+            detailsLower.includes("soffice") ||
+            detailsLower.includes("enoent") ||
+            detailsLower.includes("converter") ||
+            detailsLower.includes("econnrefused") ||
+            detailsLower.includes("fetch failed")
+          ) {
             toast.info("Server-side PDF conversion unavailable; falling back to client-side preview.")
             console.info("Server-side PDF conversion unavailable; falling back to client-side HTML preview.")
             // Fall through to client-side docx rendering below
@@ -2050,7 +2102,7 @@ export default function HomePage() {
         console.warn("Error requesting server PDF, will fall back to client rendering:", err)
       }
 
-      // If server PDF wasn't used (soffice missing or conversion failed), fall back to client-side DOCX rendering
+      // If server PDF wasn't used (converter unavailable or conversion failed), fall back to client-side DOCX rendering
       if (!usedServerPdf) {
         try {
           const mainResp = await fetch("/api/export/docx", {
@@ -2366,7 +2418,21 @@ export default function HomePage() {
     const fileName = `Mayor's Clearance ${year}.xlsx`
 
     const base64 = arrayBufferToBase64(buffer)
-    const user = firebaseAuth.currentUser
+
+    // Avoid redundant writes when the generated content matches the latest
+    // saved copy for the same year. This prevents repeated large payload
+    // uploads that can stress the client SDK.
+    const existingForYear = clearanceFiles.find((file) => getClearanceFileYear(file) === year)
+    if (
+      existingForYear &&
+      existingForYear.rowCount === combinedRows.length &&
+      existingForYear.dataBase64 === base64
+    ) {
+      return { fileName, base64 }
+    }
+
+    const auth = getAuthInstance()
+    const user = auth?.currentUser
     await saveClearanceFile({
       fileName,
       createdAt: Date.now(),
@@ -2374,8 +2440,31 @@ export default function HomePage() {
       dataBase64: base64,
       createdBy: user?.uid ?? null,
     })
+
+    // Optimistically update local cache so subsequent regenerations can dedupe
+    // without waiting for a refetch.
+    setClearanceFiles((prev) => {
+      const next: ClearanceFileWithId[] = [...prev]
+      const existingIdx = next.findIndex((file) => getClearanceFileYear(file) === year)
+      const record: ClearanceFileWithId = {
+        id: year.toString(),
+        fileName,
+        createdAt: Date.now(),
+        rowCount: combinedRows.length,
+        dataBase64: base64,
+        createdBy: user?.uid ?? null,
+      }
+
+      if (existingIdx >= 0) {
+        next[existingIdx] = record
+      } else {
+        next.push(record)
+      }
+
+      return next.sort((a, b) => b.createdAt - a.createdAt)
+    })
     return { fileName, base64 }
-  }, [approvedClearanceApplicants, approvedClients, fetchClearanceTemplate, arrayBufferToBase64, formatDateWithSlash, extractBarangayOnly, saveClearanceFile, firebaseAuth, getClearanceNameParts])
+  }, [approvedClearanceApplicants, approvedClients, fetchClearanceTemplate, arrayBufferToBase64, formatDateWithSlash, extractBarangayOnly, saveClearanceFile, getAuthInstance, getClearanceNameParts, clearanceFiles])
 
   useEffect(() => {
     generateAndSaveClearanceFileRef.current = generateAndSaveClearanceFile
@@ -3623,7 +3712,14 @@ export default function HomePage() {
         <div className="w-full max-w-5xl grid grid-cols-1 md:[grid-template-columns:2fr_1fr] gap-0 items-stretch">
           <div className="hidden md:flex items-stretch">
             <div className="bg-card border border-border border-r-0 rounded-l-xl p-0 shadow-md flex items-center justify-center md:h-[440px] w-full overflow-hidden">
-              <Image src="/images/sabangan-lgu-building.png" alt="Sabangan Seal" width={520} height={520} className="object-cover w-full h-full rounded-l-xl transform scale-110" />
+              <Image
+                src="/images/sabangan-lgu-building.png"
+                alt="Sabangan Seal"
+                width={520}
+                height={520}
+                priority
+                className="object-cover w-full h-full rounded-l-xl transform scale-110"
+              />
             </div>
           </div>
 

@@ -15,11 +15,19 @@ export function renderFromTemplate(
   templatePath: string,
   data: Record<string, unknown>
 ): Buffer {
-  // Resolve the template path relative to the project root
-  const absolutePath = path.resolve(process.cwd(), templatePath)
+  // Resolve the template path from the available runtime roots
+  const absolutePath = getTemplateAbsolutePath(templatePath)
+  const templateBuffer = fs.readFileSync(absolutePath)
 
-  // Read the template file as binary
-  const templateContent = fs.readFileSync(absolutePath, "binary")
+  return renderFromTemplateBuffer(templateBuffer, data)
+}
+
+export function renderFromTemplateBuffer(
+  templateBuffer: Buffer,
+  data: Record<string, unknown>
+): Buffer {
+  // Read template content as binary string for PizZip/docxtemplater
+  const templateContent = templateBuffer.toString("binary")
 
   // Create a PizZip instance with the template content
   const zip = new PizZip(templateContent)
@@ -40,4 +48,36 @@ export function renderFromTemplate(
   })
 
   return outputBuffer
+}
+
+export function getTemplateAbsolutePath(templatePath: string): string {
+  const normalizedTemplatePath = templatePath.replace(/\\/g, "/")
+
+  const candidateRoots = [
+    process.cwd(),
+    path.resolve(process.cwd(), "."),
+    path.resolve(__dirname, "..", ".."), // repo root when executed from lib/docx
+    path.resolve(__dirname, "..", "..", ".."),
+    "/workspace",
+  ]
+
+  const uniqueCandidates = Array.from(
+    new Set(candidateRoots.map((root) => path.resolve(root, normalizedTemplatePath)))
+  )
+
+  const match = uniqueCandidates.find((candidate) => {
+    try {
+      return fs.existsSync(candidate) && fs.statSync(candidate).isFile()
+    } catch {
+      return false
+    }
+  })
+
+  if (!match) {
+    throw new Error(
+      `Template not found: ${templatePath}. Checked: ${uniqueCandidates.join(", ")}`
+    )
+  }
+
+  return match
 }

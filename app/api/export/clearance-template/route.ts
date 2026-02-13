@@ -1,18 +1,22 @@
-import { NextResponse } from "next/server"
-import fs from "fs/promises"
-import path from "path"
+import { NextRequest, NextResponse } from "next/server"
+import { loadTemplateBuffer } from "@/lib/docx/loadTemplateBuffer"
+import { getRequestPublicOrigin } from "@/lib/http/getRequestPublicOrigin"
 
 // Template lives in the repository's templates directory.
-const TEMPLATE_PATH = path.join(process.cwd(), "templates", "2026 Mayor's Clearance.xlsx")
+const TEMPLATE_PATH = "templates/2026 Mayor's Clearance.xlsx"
 
 // Use the Node.js runtime so we can read from the filesystem.
 export const runtime = "nodejs"
 
-export async function GET() {
-  try {
-    const buffer = await fs.readFile(TEMPLATE_PATH)
+export const dynamic = "force-dynamic"
+export const revalidate = 0
 
-    return new NextResponse(buffer, {
+export async function GET(request: NextRequest) {
+  try {
+    const publicOrigin = getRequestPublicOrigin(request)
+    const buffer = await loadTemplateBuffer(TEMPLATE_PATH, publicOrigin)
+
+    return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
