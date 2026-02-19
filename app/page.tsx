@@ -43,6 +43,7 @@ import { renderAsync } from "docx-preview"
 import { app as firebaseApp, realtimeDb } from "@/database/firebase"
 import { saveClearanceFile, type ClearanceFileWithId, fetchClearanceFilesOnce } from "@/database/clearance"
 import { findStaffByEmail, updateStaffEmailVerificationStatus } from "@/database/staff"
+import { watchTreasuryFeesByClient, type TreasuryFeeAssessmentRecord } from "@/database/treasury"
 import "firebase/auth"
 import {
   browserLocalPersistence,
@@ -334,6 +335,47 @@ const getYearFromDateValue = (value: unknown): number | null => {
   return null
 }
 
+const getBusinessClientUid = (client: BusinessApplicationRecord) => {
+  const normalizedApplicantUid = (client.applicantUid ?? "").toString().trim()
+  if (normalizedApplicantUid) return normalizedApplicantUid
+  const formUid = (client.form?.applicantUid ?? "").toString().trim()
+  if (formUid) return formUid
+  return client.id
+}
+
+const getBusinessTreasuryCandidateUids = (client: BusinessApplicationRecord) =>
+  Array.from(
+    new Set(
+      [client.id, (client.applicantUid ?? "").toString().trim(), (client.form?.applicantUid ?? "").toString().trim()].filter(Boolean)
+    )
+  )
+
+const getLatestBusinessTreasuryAssessment = (
+  client: BusinessApplicationRecord,
+  treasuryFeesByClient: Record<string, TreasuryFeeAssessmentRecord>
+) => {
+  let latest: TreasuryFeeAssessmentRecord | undefined
+  const candidates = getBusinessTreasuryCandidateUids(client)
+
+  candidates.forEach((candidate) => {
+    const record = treasuryFeesByClient[candidate]
+    if (!record) return
+
+    if (!latest) {
+      latest = record
+      return
+    }
+
+    const latestTs = latest.updatedAt ?? latest.createdAt ?? 0
+    const incomingTs = record.updatedAt ?? record.createdAt ?? 0
+    if (incomingTs >= latestTs) {
+      latest = record
+    }
+  })
+
+  return latest
+}
+
 const buildNotificationGroups = (events: NotificationEvent[]): NotificationGroup[] => {
   if (events.length === 0) {
     return []
@@ -547,6 +589,7 @@ export default function HomePage() {
   const [sortBy, setSortBy] = useState<SortType>("firstComeFirstServe")
   const [applicationDateFilter, setApplicationDateFilter] = useState<Date | undefined>(undefined)
   const [clients, setClients] = useState<BusinessApplicationRecord[]>([])
+  const [treasuryFeesByClient, setTreasuryFeesByClient] = useState<Record<string, TreasuryFeeAssessmentRecord>>({})
   const [clientsLoading, setClientsLoading] = useState(false)
   const [clientsError, setClientsError] = useState<string | null>(null)
   const [clearanceApplicants, setClearanceApplicants] = useState<ClearanceApplicationRecord[]>([])
@@ -616,6 +659,7 @@ export default function HomePage() {
   const buildDocxPreviewSignature = (record?: BusinessApplicationRecord | null) => {
     if (!record) return null
     try {
+      const treasuryAssessment = getLatestBusinessTreasuryAssessment(record, treasuryFeesByClient)
       const requirements = (record.requirements || []).map((req) => ({
         id: req.id,
         name: req.name,
@@ -635,6 +679,16 @@ export default function HomePage() {
         overallStatus: record.overallStatus ?? null,
         applicationDate: record.applicationDate ?? null,
         updatedAt: (record as any)?.updatedAt ?? null,
+        treasury: treasuryAssessment
+          ? {
+              updatedAt: treasuryAssessment.updatedAt ?? treasuryAssessment.createdAt ?? null,
+              cedula_no: treasuryAssessment.cedula_no ?? null,
+              or_no: treasuryAssessment.or_no ?? null,
+              grand_total: treasuryAssessment.grand_total ?? null,
+              lgu_total: treasuryAssessment.lgu_total ?? null,
+              additional_fees: (treasuryAssessment.additional_fees ?? []).map((fee) => fee.name ?? ""),
+            }
+          : null,
         requirements,
       })
     } catch {
@@ -1082,6 +1136,7 @@ export default function HomePage() {
       })
       .map((client) => ({
         id: `business-${client.id}`,
+        applicantUid: getBusinessClientUid(client),
         applicantName: client.applicantName || client.businessName || "Unnamed Applicant",
         applicationDate: client.applicationDate ?? client.approvedAt ?? client.submittedAt,
         purpose: "Business",
@@ -1454,6 +1509,24 @@ export default function HomePage() {
     )
 
     return () => unsubscribe()
+  }, [isLoggedIn])
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setTreasuryFeesByClient({})
+      return
+    }
+
+    const stop = watchTreasuryFeesByClient(
+      (records) => setTreasuryFeesByClient(records),
+      (error) => console.error("Failed to load treasury fee assessments (main page)", error)
+    )
+
+    return () => {
+      try {
+        stop()
+      } catch {}
+    }
   }, [isLoggedIn])
 
   useEffect(() => {
@@ -2343,6 +2416,7 @@ export default function HomePage() {
       const { firstName, middleName, lastName } = getClearanceNameParts(form)
       const middleInitial = middleName ? `${middleName.charAt(0).toUpperCase()}.` : ""
       const barangay = extractBarangayOnly(form?.address?.barangay ?? form.barangay ?? "")
+      const treasuryAssessment = record.applicantUid ? treasuryFeesByClient[record.applicantUid] : undefined
       const dateValue = record.applicationDate ?? record.submittedAt ?? ""
       const recordYear = getYearFromDateValue(dateValue)
       if (targetYear && recordYear !== targetYear) {
@@ -2350,6 +2424,13 @@ export default function HomePage() {
       }
       const applicationDate = formatDateWithSlash(dateValue)
       const purpose = record.purpose || "Mayor's Clearance"
+      const cedulaNo = treasuryAssessment?.cedula_no ?? ""
+      const placeOfIssuance = "Sabangan"
+      const cedulaIssuedAt = treasuryAssessment?.cedula_issued_at ?? treasuryAssessment?.updatedAt ?? ""
+      const cedulaIssuedDate = formatDateWithSlash(cedulaIssuedAt)
+      const orNo = treasuryAssessment?.or_no ?? ""
+      const orIssuedAt = treasuryAssessment?.or_issued_at ?? treasuryAssessment?.updatedAt ?? ""
+      const orDate = formatDateWithSlash(orIssuedAt)
 
       return [[
         todayLabel,
@@ -2360,12 +2441,12 @@ export default function HomePage() {
         lastName,
         barangay,
         "Sabangan, Mountain Province",
-        "",
-        "",
-        "",
+        cedulaNo,
+        placeOfIssuance,
+        cedulaIssuedDate,
         purpose,
-        "",
-        "",
+        orNo,
+        orDate,
       ]]
     })
 
@@ -2374,6 +2455,7 @@ export default function HomePage() {
       const { firstName, middleName, lastName } = getClearanceNameParts(form)
       const middleInitial = middleName ? `${middleName.charAt(0).toUpperCase()}.` : ""
       const barangay = extractBarangayOnly(form.barangay ?? form.businessAddress ?? "")
+      const treasuryAssessment = getLatestBusinessTreasuryAssessment(client, treasuryFeesByClient)
       const dateValue =
         form.dateOfApplication ??
           form.registrationDate ??
@@ -2386,6 +2468,13 @@ export default function HomePage() {
         return []
       }
       const applicationDate = formatDateWithSlash(dateValue)
+      const cedulaNo = treasuryAssessment?.cedula_no ?? ""
+      const placeOfIssuance = "Sabangan"
+      const cedulaIssuedAt = treasuryAssessment?.cedula_issued_at ?? treasuryAssessment?.updatedAt ?? ""
+      const cedulaIssuedDate = formatDateWithSlash(cedulaIssuedAt)
+      const orNo = treasuryAssessment?.or_no ?? ""
+      const orIssuedAt = treasuryAssessment?.or_issued_at ?? treasuryAssessment?.updatedAt ?? ""
+      const orDate = formatDateWithSlash(orIssuedAt)
 
       return [[
         todayLabel,
@@ -2396,12 +2485,12 @@ export default function HomePage() {
         lastName,
         barangay,
         "Sabangan, Mountain Province",
-        "",
-        "",
-        "",
+        cedulaNo,
+        placeOfIssuance,
+        cedulaIssuedDate,
         "Securing Business Permit",
-        "",
-        "",
+        orNo,
+        orDate,
       ]]
     })
 
@@ -2464,7 +2553,7 @@ export default function HomePage() {
       return next.sort((a, b) => b.createdAt - a.createdAt)
     })
     return { fileName, base64 }
-  }, [approvedClearanceApplicants, approvedClients, fetchClearanceTemplate, arrayBufferToBase64, formatDateWithSlash, extractBarangayOnly, saveClearanceFile, getAuthInstance, getClearanceNameParts, clearanceFiles])
+  }, [approvedClearanceApplicants, approvedClients, treasuryFeesByClient, fetchClearanceTemplate, arrayBufferToBase64, formatDateWithSlash, extractBarangayOnly, saveClearanceFile, getAuthInstance, getClearanceNameParts, clearanceFiles])
 
   useEffect(() => {
     generateAndSaveClearanceFileRef.current = generateAndSaveClearanceFile

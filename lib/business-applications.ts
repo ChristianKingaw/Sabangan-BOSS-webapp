@@ -30,6 +30,7 @@ export type ChatMessage = {
 
 export type BusinessApplicationRecord = {
   id: string
+  applicantUid?: string
   applicantName: string
   businessName: string
   applicationType: ApplicationType
@@ -223,6 +224,9 @@ const getLatestApprovedRequirementTimestamp = (requirements: BusinessRequirement
 export const normalizeBusinessApplication = (id: string, payload: any): BusinessApplicationRecord => {
   const form = payload?.form ?? {}
   const meta = payload?.meta ?? {}
+  const applicantUid = normalizeWhitespace(
+    String(form?.applicantUid ?? meta?.applicantUid ?? payload?.applicantUid ?? "")
+  )
   const applicationDate: string = form.dateOfApplication ?? form.registrationDate ?? ""
   const submittedAt =
     parseDateToTimestamp(applicationDate) ?? (typeof meta.updatedAt === "number" ? meta.updatedAt : undefined)
@@ -254,6 +258,7 @@ export const normalizeBusinessApplication = (id: string, payload: any): Business
 
   return {
     id,
+    applicantUid: applicantUid || undefined,
     applicantName: applicantName || form.businessName || "Unnamed Applicant",
     businessName: form.businessName ?? "",
     applicationType,

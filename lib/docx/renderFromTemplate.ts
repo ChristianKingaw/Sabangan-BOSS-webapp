@@ -26,6 +26,16 @@ export function renderFromTemplateBuffer(
   templateBuffer: Buffer,
   data: Record<string, unknown>
 ): Buffer {
+  const formatTemplateError = (error: unknown) => {
+    const err = error as any
+    const nested = Array.isArray(err?.properties?.errors)
+      ? err.properties.errors
+          .map((item: any) => item?.properties?.explanation || item?.message)
+          .filter(Boolean)
+      : []
+    return nested.length > 0 ? nested.join(" | ") : err?.message || String(err)
+  }
+
   // Read template content as binary string for PizZip/docxtemplater
   const templateContent = templateBuffer.toString("binary")
 
@@ -33,13 +43,26 @@ export function renderFromTemplateBuffer(
   const zip = new PizZip(templateContent)
 
   // Create a Docxtemplater instance configured for template loops and line breaks
-  const doc = new Docxtemplater(zip, {
-    paragraphLoop: true,
-    linebreaks: true,
-  })
+  let doc: Docxtemplater
+  try {
+    doc = new Docxtemplater(zip, {
+      paragraphLoop: true,
+      linebreaks: true,
+      // Avoid literal "undefined" in rendered previews when a placeholder has no value.
+      nullGetter: () => "",
+    })
+  } catch (error) {
+    throw new Error(`Docx template parse failed: ${formatTemplateError(error)}`)
+  }
 
-  // Render the document with provided data
-  doc.render(data)
+  // Render the document with provided data.
+  // When docxtemplater throws "Multi error", include sub-error explanations
+  // so callers can identify malformed template tags quickly.
+  try {
+    doc.render(data)
+  } catch (error) {
+    throw new Error(`Docx template render failed: ${formatTemplateError(error)}`)
+  }
 
   // Generate the output as a buffer
   const outputBuffer = doc.getZip().generate({

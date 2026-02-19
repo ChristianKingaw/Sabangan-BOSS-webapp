@@ -1,18 +1,11 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth"
-import { onValue, ref, push, set, remove, serverTimestamp } from "firebase/database"
-import { LogOut, Plus, Trash2 } from "lucide-react"
-import { app as firebaseApp, realtimeDb } from "@/database/firebase"
+import { Edit3, LogOut, Plus, Save, Trash2, X } from "lucide-react"
+import { app as firebaseApp } from "@/database/firebase"
 import { findAdminByEmail, type AdminRecord } from "@/database/admin"
-import {
-  BUSINESS_APPLICATION_PATH,
-  getStatusBadge,
-  normalizeBusinessApplication,
-  type BusinessApplicationRecord,
-} from "@/lib/business-applications"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -22,27 +15,51 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "sonner"
 
-const RAW_NAMESPACE =
-  process.env.NEXT_PUBLIC_DATABASE_NAMESPACE ??
-  process.env.NEXT_PUBLIC_FIREBASE_DATABASE_NAMESPACE ??
-  "users/webapp"
-const STAFF_COLLECTION = RAW_NAMESPACE.endsWith("/staff") ? RAW_NAMESPACE : `${RAW_NAMESPACE}/staff`
+type ManagedRole = "staff" | "treasury"
 
-type StaffRecord = {
+type ManagedUser = {
   id: string
   firstName: string
+  middleName?: string | null
   lastName: string
-  middleName?: string
   email: string
+  status?: string | null
   emailVerified?: boolean
-  status?: string
+  uid?: string | null
 }
 
-type StaffFormState = {
+type ManagedBusinessApplication = {
+  id: string
+  applicantName: string
+  businessName: string
+  applicationType: string
+  status: string
+  applicationDate?: string | null
+}
+
+type UserFormState = {
   firstName: string
   middleName: string
   lastName: string
   email: string
+  password: string
+  status: string
+  emailVerified: boolean
+}
+
+const EMPTY_CREATE_FORM: UserFormState = {
+  firstName: "",
+  middleName: "",
+  lastName: "",
+  email: "",
+  password: "",
+  status: "active",
+  emailVerified: true,
+}
+
+const ROLE_LABELS: Record<ManagedRole, string> = {
+  staff: "Staff",
+  treasury: "Treasury",
 }
 
 export default function AdminClient() {
@@ -53,20 +70,22 @@ export default function AdminClient() {
   const [loginForm, setLoginForm] = useState({ email: "", password: "" })
   const [me, setMe] = useState<AdminRecord | null>(null)
 
-  const [staff, setStaff] = useState<StaffRecord[]>([])
-  const [apps, setApps] = useState<BusinessApplicationRecord[]>([])
-
-  const [selectedStaff, setSelectedStaff] = useState<Set<string>>(new Set())
-  const [selectedApps, setSelectedApps] = useState<Set<string>>(new Set())
-
-  const [staffForm, setStaffForm] = useState<StaffFormState>({
-    firstName: "",
-    middleName: "",
-    lastName: "",
-    email: "",
+  const [activeRole, setActiveRole] = useState<ManagedRole>("staff")
+  const [usersByRole, setUsersByRole] = useState<Record<ManagedRole, ManagedUser[]>>({
+    staff: [],
+    treasury: [],
   })
 
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [createForm, setCreateForm] = useState<UserFormState>(EMPTY_CREATE_FORM)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState<UserFormState>(EMPTY_CREATE_FORM)
+  const [businessApplications, setBusinessApplications] = useState<ManagedBusinessApplication[]>([])
+  const [selectedBusinessIds, setSelectedBusinessIds] = useState<Set<string>>(new Set())
+  const [businessLoading, setBusinessLoading] = useState(false)
+
   const isAuthed = Boolean(me)
+  const activeUsers = usersByRole[activeRole] ?? []
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -97,87 +116,143 @@ export default function AdminClient() {
     return () => unsub()
   }, [auth])
 
-  useEffect(() => {
-    const staffRef = ref(realtimeDb, STAFF_COLLECTION)
-    const unsub = onValue(
-      staffRef,
-      (snapshot) => {
-        const data = snapshot.val() as Record<string, any> | null
-        if (!data) {
-          setStaff([])
-          return
-        }
-        const rows = Object.entries(data).map(([id, value]) => ({
-          id,
-          firstName: value?.firstName ?? "",
-          middleName: value?.middleName ?? "",
-          lastName: value?.lastName ?? "",
-          email: value?.email ?? "",
-          emailVerified: value?.emailVerified ?? false,
-          status: value?.status ?? "",
-        }))
-        setStaff(rows)
-      },
-      (error) => {
-        console.error(error)
-        toast.error("Failed to load staff")
+  const apiRequest = useCallback(
+    async (method: "GET" | "POST" | "PATCH" | "DELETE", payload?: Record<string, unknown>) => {
+      const currentUser = auth.currentUser
+      if (!currentUser) {
+        throw new Error("No authenticated admin session.")
       }
-    )
-    return () => unsub()
-  }, [])
 
-  useEffect(() => {
-    const appRef = ref(realtimeDb, BUSINESS_APPLICATION_PATH)
-    const unsub = onValue(
-      appRef,
-      (snapshot) => {
-        const data = snapshot.val() as Record<string, any> | null
-        if (!data) {
-          setApps([])
-          return
-        }
-        const records = Object.entries(data).map(([id, payload]) => normalizeBusinessApplication(id, payload))
-        setApps(records)
-      },
-      (error) => {
-        console.error(error)
-        toast.error("Failed to load applications")
+      const idToken = await currentUser.getIdToken(true)
+      const response = await fetch("/api/admin/users", {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: method === "GET" ? undefined : JSON.stringify(payload ?? {}),
+      })
+
+      let body: Record<string, any> = {}
+      try {
+        body = (await response.json()) as Record<string, any>
+      } catch {
+        body = {}
       }
-    )
-    return () => unsub()
-  }, [])
 
-  const toggleSelectApp = (id: string) => {
-    setSelectedApps((prev) => {
-      const s = new Set(prev)
-      if (s.has(id)) s.delete(id)
-      else s.add(id)
-      return s
-    })
-  }
+      if (!response.ok) {
+        throw new Error(String(body?.error ?? "Request failed."))
+      }
 
-  const toggleSelectAllApps = () => {
-    if (selectedApps.size === apps.length) {
-      setSelectedApps(new Set())
-      return
-    }
-    setSelectedApps(new Set(apps.map((a) => a.id)))
-  }
+      return body
+    },
+    [auth]
+  )
 
-  const handleDeleteSelectedApps = async () => {
-    if (selectedApps.size === 0) return
-    const confirmDelete = window.confirm("Delete selected applications?")
-    if (!confirmDelete) return
+  const apiBusinessRequest = useCallback(
+    async (method: "GET" | "DELETE", payload?: Record<string, unknown>) => {
+      const currentUser = auth.currentUser
+      if (!currentUser) {
+        throw new Error("No authenticated admin session.")
+      }
+
+      const idToken = await currentUser.getIdToken(true)
+      const response = await fetch("/api/admin/business-applications", {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: method === "GET" ? undefined : JSON.stringify(payload ?? {}),
+      })
+
+      let body: Record<string, any> = {}
+      try {
+        body = (await response.json()) as Record<string, any>
+      } catch {
+        body = {}
+      }
+
+      if (!response.ok) {
+        throw new Error(String(body?.error ?? "Request failed."))
+      }
+
+      return body
+    },
+    [auth]
+  )
+
+  const loadUsers = useCallback(async () => {
     try {
-      const ids = Array.from(selectedApps)
-      await Promise.all(ids.map((id) => remove(ref(realtimeDb, `${BUSINESS_APPLICATION_PATH}/${id}`))))
-      setSelectedApps(new Set())
-      toast.success("Deleted selected applications")
+      const body = await apiRequest("GET")
+      const staff = Array.isArray(body?.staff) ? (body.staff as ManagedUser[]) : []
+      const treasury = Array.isArray(body?.treasury) ? (body.treasury as ManagedUser[]) : []
+
+      setUsersByRole({
+        staff,
+        treasury,
+      })
+
+      setSelectedIds((prev) => {
+        const availableIds = new Set((activeRole === "staff" ? staff : treasury).map((u) => u.id))
+        const next = new Set<string>()
+        prev.forEach((id) => {
+          if (availableIds.has(id)) next.add(id)
+        })
+        return next
+      })
     } catch (err) {
       console.error(err)
-      toast.error("Failed to delete selected applications")
+      toast.error(err instanceof Error ? err.message : "Failed to load users")
     }
-  }
+  }, [activeRole, apiRequest])
+
+  const loadBusinessApplications = useCallback(async () => {
+    setBusinessLoading(true)
+    try {
+      const body = await apiBusinessRequest("GET")
+      const applications = Array.isArray(body?.applications)
+        ? (body.applications as ManagedBusinessApplication[])
+        : []
+
+      setBusinessApplications(applications)
+      setSelectedBusinessIds((prev) => {
+        const availableIds = new Set(applications.map((application) => application.id))
+        const next = new Set<string>()
+        prev.forEach((id) => {
+          if (availableIds.has(id)) next.add(id)
+        })
+        return next
+      })
+    } catch (err) {
+      console.error(err)
+      toast.error(err instanceof Error ? err.message : "Failed to load business applications")
+      setBusinessApplications([])
+      setSelectedBusinessIds(new Set())
+    } finally {
+      setBusinessLoading(false)
+    }
+  }, [apiBusinessRequest])
+
+  useEffect(() => {
+    if (!isAuthed) {
+      setUsersByRole({ staff: [], treasury: [] })
+      setSelectedIds(new Set())
+      setEditId(null)
+      setBusinessApplications([])
+      setSelectedBusinessIds(new Set())
+      setBusinessLoading(false)
+      return
+    }
+
+    loadUsers()
+    loadBusinessApplications()
+  }, [isAuthed, loadBusinessApplications, loadUsers])
+
+  useEffect(() => {
+    setSelectedIds(new Set())
+    setEditId(null)
+  }, [activeRole])
 
   const handleLogin = async () => {
     if (!loginForm.email || !loginForm.password) {
@@ -211,91 +286,172 @@ export default function AdminClient() {
     router.refresh()
   }
 
-  const handleCreateStaff = async () => {
-    if (!staffForm.email || !staffForm.firstName || !staffForm.lastName) {
-      toast.error("First name, last name, and email are required")
+  const handleCreateUser = async () => {
+    if (!createForm.email || !createForm.firstName || !createForm.lastName || !createForm.password) {
+      toast.error("First name, last name, email, and password are required")
       return
     }
-    try {
-      const staffRef = ref(realtimeDb, STAFF_COLLECTION)
-      const newRef = push(staffRef)
-      if (!newRef.key) throw new Error("Failed to allocate staff ID")
 
-      await set(newRef, {
-        firstName: staffForm.firstName.trim(),
-        middleName: staffForm.middleName.trim() || undefined,
-        lastName: staffForm.lastName.trim(),
-        email: staffForm.email.trim().toLowerCase(),
-        emailVerified: false,
-        status: "active",
-        createdAt: serverTimestamp(),
-        createdByEmail: me?.email ?? null,
+    try {
+      await apiRequest("POST", {
+        role: activeRole,
+        firstName: createForm.firstName,
+        middleName: createForm.middleName,
+        lastName: createForm.lastName,
+        email: createForm.email,
+        password: createForm.password,
+        status: createForm.status || "active",
+        emailVerified: createForm.emailVerified,
       })
 
-      setStaffForm({ firstName: "", middleName: "", lastName: "", email: "" })
-      toast.success("Staff user created")
+      setCreateForm(EMPTY_CREATE_FORM)
+      await loadUsers()
+      toast.success(`${ROLE_LABELS[activeRole]} user created`)
     } catch (err) {
       console.error(err)
-      toast.error("Failed to create staff user")
+      toast.error(err instanceof Error ? err.message : "Failed to create user")
     }
   }
 
-  const handleDeleteStaff = async (id: string) => {
-    const confirmDelete = window.confirm("Delete this staff user?")
-    if (!confirmDelete) return
-    try {
-      const staffRef = ref(realtimeDb, `${STAFF_COLLECTION}/${id}`)
-      await remove(staffRef)
-      toast.success("Staff user deleted")
-    } catch (err) {
-      console.error(err)
-      toast.error("Failed to delete staff user")
-    }
-  }
-
-  const toggleSelectStaff = (id: string) => {
-    setSelectedStaff((prev) => {
-      const s = new Set(prev)
-      if (s.has(id)) s.delete(id)
-      else s.add(id)
-      return s
+  const startEdit = (user: ManagedUser) => {
+    setEditId(user.id)
+    setEditForm({
+      firstName: user.firstName ?? "",
+      middleName: user.middleName ?? "",
+      lastName: user.lastName ?? "",
+      email: user.email ?? "",
+      password: "",
+      status: user.status ?? "active",
+      emailVerified: Boolean(user.emailVerified),
     })
   }
 
-  const toggleSelectAllStaff = () => {
-    if (selectedStaff.size === staff.length) {
-      setSelectedStaff(new Set())
+  const cancelEdit = () => {
+    setEditId(null)
+    setEditForm(EMPTY_CREATE_FORM)
+  }
+
+  const saveEdit = async (id: string) => {
+    if (!editForm.email || !editForm.firstName || !editForm.lastName) {
+      toast.error("First name, last name, and email are required")
       return
     }
-    setSelectedStaff(new Set(staff.map((s) => s.id)))
-  }
 
-  const handleDeleteSelectedStaff = async () => {
-    if (selectedStaff.size === 0) return
-    const confirmDelete = window.confirm("Delete selected staff users?")
-    if (!confirmDelete) return
     try {
-      const ids = Array.from(selectedStaff)
-      await Promise.all(ids.map((id) => remove(ref(realtimeDb, `${STAFF_COLLECTION}/${id}`))))
-      setSelectedStaff(new Set())
-      toast.success("Deleted selected staff users")
+      await apiRequest("PATCH", {
+        role: activeRole,
+        id,
+        firstName: editForm.firstName,
+        middleName: editForm.middleName,
+        lastName: editForm.lastName,
+        email: editForm.email,
+        password: editForm.password || undefined,
+        status: editForm.status || "active",
+        emailVerified: editForm.emailVerified,
+      })
+
+      await loadUsers()
+      cancelEdit()
+      toast.success(`${ROLE_LABELS[activeRole]} user updated`)
     } catch (err) {
       console.error(err)
-      toast.error("Failed to delete selected staff users")
+      toast.error(err instanceof Error ? err.message : "Failed to update user")
     }
   }
 
-  const handleDeleteApplication = async (id: string) => {
-    const confirmDelete = window.confirm("Delete this application?")
+  const deleteUser = async (id: string) => {
+    const confirmDelete = window.confirm(`Delete this ${ROLE_LABELS[activeRole].toLowerCase()} user?`)
     if (!confirmDelete) return
+
     try {
-      const appRef = ref(realtimeDb, `${BUSINESS_APPLICATION_PATH}/${id}`)
-      await remove(appRef)
-      toast.success("Application deleted")
+      await apiRequest("DELETE", { role: activeRole, id })
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+      await loadUsers()
+      toast.success("User deleted")
     } catch (err) {
       console.error(err)
-      toast.error("Failed to delete application")
+      toast.error(err instanceof Error ? err.message : "Failed to delete user")
     }
+  }
+
+  const deleteSelectedUsers = async () => {
+    if (selectedIds.size === 0) return
+    const confirmDelete = window.confirm(`Delete selected ${ROLE_LABELS[activeRole].toLowerCase()} users?`)
+    if (!confirmDelete) return
+
+    try {
+      await Promise.all(
+        Array.from(selectedIds).map((id) =>
+          apiRequest("DELETE", {
+            role: activeRole,
+            id,
+          })
+        )
+      )
+      setSelectedIds(new Set())
+      await loadUsers()
+      toast.success("Selected users deleted")
+    } catch (err) {
+      console.error(err)
+      toast.error(err instanceof Error ? err.message : "Failed to delete selected users")
+    }
+  }
+
+  const toggleSelectUser = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAllUsers = () => {
+    if (activeUsers.length === 0) return
+    if (selectedIds.size === activeUsers.length) {
+      setSelectedIds(new Set())
+      return
+    }
+    setSelectedIds(new Set(activeUsers.map((u) => u.id)))
+  }
+
+  const deleteSelectedBusinessApplications = async () => {
+    if (selectedBusinessIds.size === 0) return
+
+    const confirmDelete = window.confirm("Delete selected business applications?")
+    if (!confirmDelete) return
+
+    try {
+      await apiBusinessRequest("DELETE", { ids: Array.from(selectedBusinessIds) })
+      setSelectedBusinessIds(new Set())
+      await loadBusinessApplications()
+      toast.success("Selected business applications deleted")
+    } catch (err) {
+      console.error(err)
+      toast.error(err instanceof Error ? err.message : "Failed to delete selected business applications")
+    }
+  }
+
+  const toggleSelectBusinessApplication = (id: string) => {
+    setSelectedBusinessIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAllBusinessApplications = () => {
+    if (businessApplications.length === 0) return
+    if (selectedBusinessIds.size === businessApplications.length) {
+      setSelectedBusinessIds(new Set())
+      return
+    }
+    setSelectedBusinessIds(new Set(businessApplications.map((application) => application.id)))
   }
 
   if (authLoading) {
@@ -356,60 +512,110 @@ export default function AdminClient() {
         </Button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Create Staff User</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <div>
-                <Label>First name</Label>
-                <Input
-                  value={staffForm.firstName}
-                  onChange={(e) => setStaffForm((prev) => ({ ...prev, firstName: e.target.value }))}
-                />
-              </div>
-              <div>
-                <Label>Last name</Label>
-                <Input
-                  value={staffForm.lastName}
-                  onChange={(e) => setStaffForm((prev) => ({ ...prev, lastName: e.target.value }))}
-                />
-              </div>
-              <div>
-                <Label>Middle name</Label>
-                <Input
-                  value={staffForm.middleName}
-                  onChange={(e) => setStaffForm((prev) => ({ ...prev, middleName: e.target.value }))}
-                />
-              </div>
-              <div>
-                <Label>Email</Label>
-                <Input
-                  type="email"
-                  value={staffForm.email}
-                  onChange={(e) => setStaffForm((prev) => ({ ...prev, email: e.target.value }))}
-                  placeholder="staff@example.com"
-                />
-              </div>
-            </div>
-            <Button onClick={handleCreateStaff} className="w-full gap-2">
-              <Plus className="h-4 w-4" /> Create staff user
-            </Button>
-            <p className="text-xs text-gray-500">Creates a staff entry in Realtime Database.</p>
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Manage User Roles</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2">
+            {(["staff", "treasury"] as ManagedRole[]).map((role) => (
+              <Button
+                key={role}
+                type="button"
+                variant={activeRole === role ? "default" : "outline"}
+                onClick={() => setActiveRole(role)}
+              >
+                {ROLE_LABELS[role]} ({usersByRole[role]?.length ?? 0})
+              </Button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Staff users ({staff.length})</CardTitle>
-          <div className="ml-auto">
-            <Button size="sm" variant="destructive" onClick={handleDeleteSelectedStaff} disabled={selectedStaff.size === 0}>
-              Delete selected
-            </Button>
+          <CardTitle>Create {ROLE_LABELS[activeRole]} User</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div>
+              <Label>First name</Label>
+              <Input
+                value={createForm.firstName}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, firstName: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label>Middle name</Label>
+              <Input
+                value={createForm.middleName}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, middleName: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label>Last name</Label>
+              <Input
+                value={createForm.lastName}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, lastName: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={createForm.email}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, email: e.target.value }))}
+                placeholder={`${activeRole}@example.com`}
+              />
+            </div>
+            <div>
+              <Label>Password</Label>
+              <Input
+                type="password"
+                value={createForm.password}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, password: e.target.value }))}
+                placeholder="Required"
+              />
+            </div>
+            <div>
+              <Label>Status</Label>
+              <Input
+                value={createForm.status}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, status: e.target.value }))}
+                placeholder="active"
+              />
+            </div>
           </div>
+
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={createForm.emailVerified}
+              onChange={(e) => setCreateForm((prev) => ({ ...prev, emailVerified: e.target.checked }))}
+              className="h-4 w-4"
+            />
+            Mark email as verified
+          </label>
+
+          <Button onClick={handleCreateUser} className="w-full gap-2">
+            <Plus className="h-4 w-4" /> Create {ROLE_LABELS[activeRole]} user
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>
+            {ROLE_LABELS[activeRole]} users ({activeUsers.length})
+          </CardTitle>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={deleteSelectedUsers}
+            disabled={selectedIds.size === 0}
+          >
+            Delete selected
+          </Button>
         </CardHeader>
         <CardContent>
           <Table>
@@ -419,53 +625,146 @@ export default function AdminClient() {
                   <input
                     type="checkbox"
                     className="h-4 w-4"
-                    checked={selectedStaff.size > 0 && selectedStaff.size === staff.length}
-                    onChange={toggleSelectAllStaff}
-                    aria-label="Select all staff"
+                    checked={activeUsers.length > 0 && selectedIds.size === activeUsers.length}
+                    onChange={toggleSelectAllUsers}
+                    aria-label="Select all users"
                   />
                 </TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Verified</TableHead>
-                <TableHead className="w-24">Actions</TableHead>
+                <TableHead className="w-40">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {staff.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4"
-                      checked={selectedStaff.has(user.id)}
-                      onChange={() => toggleSelectStaff(user.id)}
-                      aria-label={`Select staff ${user.email}`}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-medium">
-                      {[user.firstName, user.middleName, user.lastName].filter(Boolean).join(" ")}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm text-gray-700">{user.email}</TableCell>
-                  <TableCell className="text-sm text-gray-700">{user.status || ""}</TableCell>
-                  <TableCell>
-                    <Badge className={cn("capitalize", user.emailVerified ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800")}>
-                      {user.emailVerified ? "Verified" : "Unverified"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Button size="sm" variant="destructive" onClick={() => handleDeleteStaff(user.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {staff.length === 0 && (
+              {activeUsers.map((user) => {
+                const isEditing = editId === user.id
+                return (
+                  <TableRow key={user.id}>
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={selectedIds.has(user.id)}
+                        onChange={() => toggleSelectUser(user.id)}
+                        aria-label={`Select ${user.email}`}
+                      />
+                    </TableCell>
+
+                    <TableCell>
+                      {isEditing ? (
+                        <div className="grid gap-2">
+                          <Input
+                            value={editForm.firstName}
+                            onChange={(e) => setEditForm((prev) => ({ ...prev, firstName: e.target.value }))}
+                            placeholder="First"
+                          />
+                          <Input
+                            value={editForm.middleName}
+                            onChange={(e) => setEditForm((prev) => ({ ...prev, middleName: e.target.value }))}
+                            placeholder="Middle"
+                          />
+                          <Input
+                            value={editForm.lastName}
+                            onChange={(e) => setEditForm((prev) => ({ ...prev, lastName: e.target.value }))}
+                            placeholder="Last"
+                          />
+                        </div>
+                      ) : (
+                        <div className="font-medium">
+                          {[user.firstName, user.middleName, user.lastName].filter(Boolean).join(" ")}
+                        </div>
+                      )}
+                    </TableCell>
+
+                    <TableCell className="text-sm text-gray-700">
+                      {isEditing ? (
+                        <div className="grid gap-2">
+                          <Input
+                            type="email"
+                            value={editForm.email}
+                            onChange={(e) => setEditForm((prev) => ({ ...prev, email: e.target.value }))}
+                            placeholder="Email"
+                          />
+                          <Input
+                            type="password"
+                            value={editForm.password}
+                            onChange={(e) => setEditForm((prev) => ({ ...prev, password: e.target.value }))}
+                            placeholder="New password (optional)"
+                          />
+                        </div>
+                      ) : (
+                        user.email
+                      )}
+                    </TableCell>
+
+                    <TableCell className="text-sm text-gray-700">
+                      {isEditing ? (
+                        <Input
+                          value={editForm.status}
+                          onChange={(e) => setEditForm((prev) => ({ ...prev, status: e.target.value }))}
+                          placeholder="active"
+                        />
+                      ) : (
+                        user.status || ""
+                      )}
+                    </TableCell>
+
+                    <TableCell>
+                      {isEditing ? (
+                        <label className="inline-flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={editForm.emailVerified}
+                            onChange={(e) => setEditForm((prev) => ({ ...prev, emailVerified: e.target.checked }))}
+                          />
+                          Verified
+                        </label>
+                      ) : (
+                        <Badge
+                          className={cn(
+                            "capitalize",
+                            user.emailVerified
+                              ? "bg-green-100 text-green-800"
+                              : "bg-amber-100 text-amber-800"
+                          )}
+                        >
+                          {user.emailVerified ? "Verified" : "Unverified"}
+                        </Badge>
+                      )}
+                    </TableCell>
+
+                    <TableCell>
+                      {isEditing ? (
+                        <div className="flex items-center gap-2">
+                          <Button size="sm" onClick={() => saveEdit(user.id)}>
+                            <Save className="h-4 w-4" />
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={cancelEdit}>
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <Button size="sm" variant="outline" onClick={() => startEdit(user)}>
+                            <Edit3 className="h-4 w-4" />
+                          </Button>
+                          <Button size="sm" variant="destructive" onClick={() => deleteUser(user.id)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+
+              {activeUsers.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center text-sm text-gray-500">
-                    No staff users.
+                    No {ROLE_LABELS[activeRole].toLowerCase()} users found.
                   </TableCell>
                 </TableRow>
               )}
@@ -475,13 +774,16 @@ export default function AdminClient() {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Applications ({apps.length})</CardTitle>
-          <div className="ml-auto">
-            <Button size="sm" variant="destructive" onClick={handleDeleteSelectedApps} disabled={selectedApps.size === 0}>
-              Delete selected
-            </Button>
-          </div>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Business Applications ({businessApplications.length})</CardTitle>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={deleteSelectedBusinessApplications}
+            disabled={selectedBusinessIds.size === 0 || businessLoading}
+          >
+            Delete selected
+          </Button>
         </CardHeader>
         <CardContent>
           <Table>
@@ -491,50 +793,57 @@ export default function AdminClient() {
                   <input
                     type="checkbox"
                     className="h-4 w-4"
-                    checked={selectedApps.size > 0 && selectedApps.size === apps.length}
-                    onChange={toggleSelectAllApps}
-                    aria-label="Select all applications"
+                    checked={businessApplications.length > 0 && selectedBusinessIds.size === businessApplications.length}
+                    onChange={toggleSelectAllBusinessApplications}
+                    aria-label="Select all business applications"
                   />
                 </TableHead>
                 <TableHead>Applicant</TableHead>
                 <TableHead>Business</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="w-44">Actions</TableHead>
+                <TableHead>Application Date</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {apps.map((app) => {
-                const badge = getStatusBadge(app.status, app.overallStatus)
-                return (
-                  <TableRow key={app.id}>
-                    <TableCell>
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4"
-                        checked={selectedApps.has(app.id)}
-                        onChange={() => toggleSelectApp(app.id)}
-                        aria-label={`Select app ${app.id}`}
-                      />
-                    </TableCell>
-                    <TableCell className="font-medium">{app.applicantName || "Unnamed"}</TableCell>
-                    <TableCell className="text-sm text-gray-700">{app.businessName || ""}</TableCell>
-                    <TableCell className="text-sm text-gray-700">{app.applicationType}</TableCell>
-                    <TableCell>
-                      <Badge className={cn(badge.className, "capitalize")}>{badge.label}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Button size="sm" variant="destructive" onClick={() => handleDeleteApplication(app.id)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-              {apps.length === 0 && (
+              {businessApplications.map((application) => (
+                <TableRow key={application.id}>
+                  <TableCell>
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={selectedBusinessIds.has(application.id)}
+                      onChange={() => toggleSelectBusinessApplication(application.id)}
+                      aria-label={`Select application ${application.id}`}
+                    />
+                  </TableCell>
+                  <TableCell className="font-medium">{application.applicantName || "Unnamed Applicant"}</TableCell>
+                  <TableCell>{application.businessName || "—"}</TableCell>
+                  <TableCell>{application.applicationType || "—"}</TableCell>
+                  <TableCell>{application.status || "Pending"}</TableCell>
+                  <TableCell>
+                    {application.applicationDate
+                      ? (() => {
+                          const parsed = new Date(application.applicationDate)
+                          return Number.isNaN(parsed.getTime()) ? "—" : parsed.toLocaleDateString()
+                        })()
+                      : "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
+
+              {!businessLoading && businessApplications.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center text-sm text-gray-500">
-                    No applications found.
+                    No business applications found.
+                  </TableCell>
+                </TableRow>
+              )}
+
+              {businessLoading && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-sm text-gray-500">
+                    Loading business applications...
                   </TableCell>
                 </TableRow>
               )}
