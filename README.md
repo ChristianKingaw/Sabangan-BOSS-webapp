@@ -5,6 +5,16 @@
 eBOSS Sabangan is a web-based Business One Stop Shop (BOSS) system for LGU staff.  
 It centralizes business application review, document validation, Mayor's Clearance processing, treasury fee assessment, and LGU status announcements in one platform.
 
+## Screenshots
+
+### BOSS Staff Login
+
+![BOSS Staff Login](docs/screenshots/boss-signin.png)
+
+### Treasury Login
+
+![Treasury Login](docs/screenshots/treasury-signin.png)
+
 ## Features
 
 ### Main System (`/`)
