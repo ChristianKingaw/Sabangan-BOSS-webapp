@@ -7,6 +7,10 @@ import { loadTemplateBuffer } from "@/lib/docx/loadTemplateBuffer"
 import { getRequestPublicOrigin } from "@/lib/http/getRequestPublicOrigin"
 import { mapApplicationToTemplate } from "@/lib/export/mapApplicationToTemplate"
 import { BUSINESS_APPLICATION_PATH } from "@/lib/business-applications"
+import {
+  fetchLatestTreasuryAssessmentByClientUid,
+  resolveBusinessClientUid,
+} from "@/lib/treasury-assessment"
 
 // Force Node.js runtime for this route (required for file system operations)
 export const runtime = "nodejs"
@@ -16,7 +20,7 @@ export const revalidate = 0
 
 // Template paths
 const TEMPLATES = {
-  mainForm: "templates/2025_new_business_form_template_with_tags_v2.docx",
+  mainForm: "templates/2025_new_business_form_template_with_tags_v2_fixed.docx",
   swornCapital: "templates/Sworn_Statement_of_Capital.docx",
   swornGrossReceipts: "templates/Sworn_Declaration_of_Gross_receipt.docx",
 }
@@ -91,9 +95,17 @@ export async function POST(request: NextRequest) {
     const applicationData = snapshot.val()
     const formData = applicationData?.form ?? {}
     const publicOrigin = getRequestPublicOrigin(request)
+    const clientUid = resolveBusinessClientUid(applicationId, applicationData ?? {})
+
+    let treasuryAssessment = null
+    try {
+      treasuryAssessment = await fetchLatestTreasuryAssessmentByClientUid(adminDb, [clientUid, applicationId])
+    } catch (treasuryError) {
+      console.warn("Failed to load treasury assessment for application-docs export", treasuryError)
+    }
 
     // 4. Map database fields to template tags
-    const templateData = mapApplicationToTemplate(formData)
+    const templateData = mapApplicationToTemplate(formData, treasuryAssessment)
 
     // 5. Determine application type
     const applicationType = String(formData.applicationType ?? "").toLowerCase()

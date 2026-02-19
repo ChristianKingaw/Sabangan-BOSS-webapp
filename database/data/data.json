@@ -1,5 +1,6 @@
 {
   "admins": {
+    "4i7DUVVuenbxCTkaHciekfZaizt1": true,
     "GRPoFMzBM8TOr4udKrFV1I8YrWu1": true,
     "UvYowd9c0vVUWljeg7eHDpVKMm02": true,
     "YwlZpKnLNFOpToQLdSMgZBesiJ92": true,
@@ -1410,11 +1411,11 @@
             },
             "files": {
               "-OkRLtUcvTvPApbIdRoE": {
-                "adminNote": "asd",
+                "adminNote": "",
                 "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OkRLTMXXr-csrIpxXG8%2FBarangay_Clearance%2F-OkRLtUcvTvPApbIdRoE.jpg?alt=media&token=55c11125-50e2-4f55-a919-75c59f2af119",
-                "status": "rejected",
+                "status": "approved",
                 "storagePath": "BusinessApplications/-OkRLTMXXr-csrIpxXG8/Barangay_Clearance/-OkRLtUcvTvPApbIdRoE.jpg",
-                "uploadedAt": 1770002295570
+                "uploadedAt": 1770875932466
               }
             }
           },
@@ -1430,11 +1431,11 @@
             },
             "files": {
               "-OkRLvmlwHFIld8bigKs": {
-                "adminNote": "asd",
+                "adminNote": "",
                 "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OkRLTMXXr-csrIpxXG8%2FDTI%2F-OkRLvmlwHFIld8bigKs.jpg?alt=media&token=8cc772a8-47fa-4765-a2c6-bf03297e5ddb",
-                "status": "rejected",
+                "status": "approved",
                 "storagePath": "BusinessApplications/-OkRLTMXXr-csrIpxXG8/DTI/-OkRLvmlwHFIld8bigKs.jpg",
-                "uploadedAt": 1770002304642
+                "uploadedAt": 1770875936732
               }
             }
           },
@@ -1450,11 +1451,11 @@
             },
             "files": {
               "-OkRLuIQZzkIsj6QIgG4": {
-                "adminNote": "asd",
+                "adminNote": "",
                 "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OkRLTMXXr-csrIpxXG8%2FFire_Safety_Certificate%2F-OkRLuIQZzkIsj6QIgG4.jpg?alt=media&token=cb4a01c2-cf3f-4ff4-ba5d-88802e281c61",
-                "status": "rejected",
+                "status": "approved",
                 "storagePath": "BusinessApplications/-OkRLTMXXr-csrIpxXG8/Fire_Safety_Certificate/-OkRLuIQZzkIsj6QIgG4.jpg",
-                "uploadedAt": 1770002298534
+                "uploadedAt": 1770875940049
               }
             }
           },
@@ -1464,14 +1465,14 @@
               "-OkRLrmhTrZ0BiUqs7BS": {
                 "adminNote": "",
                 "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OkRLTMXXr-csrIpxXG8%2FPolice_Clearance%2F-OkRLrmhTrZ0BiUqs7BS.jpg?alt=media&token=212f957c-e329-4acf-9074-9c99d42bcc31",
-                "status": "pending",
+                "status": "approved",
                 "storagePath": "BusinessApplications/-OkRLTMXXr-csrIpxXG8/Police_Clearance/-OkRLrmhTrZ0BiUqs7BS.jpg",
                 "uploadedAt": 1770002288907
               },
               "-OkRLsf_23QEqV9wWm5M": {
                 "adminNote": "",
                 "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OkRLTMXXr-csrIpxXG8%2FPolice_Clearance%2F-OkRLsf_23QEqV9wWm5M.jpg?alt=media&token=335b836c-9d03-4969-aed3-f3e495abcabb",
-                "status": "pending",
+                "status": "approved",
                 "storagePath": "BusinessApplications/-OkRLTMXXr-csrIpxXG8/Police_Clearance/-OkRLsf_23QEqV9wWm5M.jpg",
                 "uploadedAt": 1770002292274
               }
@@ -1483,7 +1484,7 @@
               "-OkRLv1N5SJh6k0Njnib": {
                 "adminNote": "",
                 "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OkRLTMXXr-csrIpxXG8%2FSanitary_Permit%2F-OkRLv1N5SJh6k0Njnib.jpg?alt=media&token=9c5959b8-ea43-4a30-91e4-aa9ad561ddc0",
-                "status": "pending",
+                "status": "approved",
                 "storagePath": "BusinessApplications/-OkRLTMXXr-csrIpxXG8/Sanitary_Permit/-OkRLv1N5SJh6k0Njnib.jpg",
                 "uploadedAt": 1770002301626
               }
@@ -1491,6 +1492,691 @@
           }
         },
         "status": "Pending Update Review"
+      },
+      "-OlFCdaH5JNc22-LZigH": {
+        "chat": {
+          "-OlFShBaHdmc5GAIKsCh": {
+            "senderRole": "admin",
+            "senderUid": "FtinB2j5svObUiScWT9AAbepNvk2",
+            "text": "hello",
+            "ts": 1770876487164
+          }
+        },
+        "fees": {
+          "breakdown": {
+            "Business Tax": 10000000,
+            "DST": 90,
+            "Mayor's Clearance": 200,
+            "Mayor's Permit": 2500,
+            "Sanitary Permit": 100,
+            "Subscription Fee": 100,
+            "Weights and Measure": 100
+          },
+          "computedAt": 1770872343719,
+          "inputs": {
+            "alcoholRule": "Based on total gross (bracket estimate)",
+            "applicationType": "Renewal",
+            "basisLabel": "Gross",
+            "basisTotal": 1000000000,
+            "businessTax": 10000000,
+            "businessType": "Single",
+            "cedulaExcluded": true,
+            "cedulaNote": "Community Tax Certificate (Cedula) will be calculated by the Municipal Treasury and is not included in this estimate.",
+            "estimateDisabled": false,
+            "grossTotal": 1000000000,
+            "grossTotalInt": 1000000000,
+            "hasRetailStore": true,
+            "hasTricycle": false,
+            "lpgRule": "500",
+            "mayorsPermitBaseRule": "Based on total gross (bracket estimate)",
+            "mayorsPermitByLob": {
+              "Sari-sari store": {
+                "base": 2500
+              }
+            },
+            "mayorsPermitTotal": 2500,
+            "taxApplied": true,
+            "taxBasisTotal": 1000000000,
+            "tobaccoRule": "Retail 500; Wholesale 1500",
+            "tricycleFeesTotal": 0,
+            "tricycleUnits": 0,
+            "zoningFee": 0
+          },
+          "rulesVersion": "v10-2026-01-tricycle-fees",
+          "total": 10003090
+        },
+        "form": {
+          "activities": [
+            {
+              "capitalization": "",
+              "grossSales": "1000000000",
+              "lineOfBusiness": "Sari-sari store",
+              "otherFoodHandlerType": "",
+              "sellsAlcohol": false,
+              "sellsLpg": false,
+              "sellsTobacco": false,
+              "tobaccoWholesale": false,
+              "tricycleUnits": ""
+            }
+          ],
+          "applicationType": "Renewal",
+          "businessAddress": "SABAGAN",
+          "businessEmail": "ASD",
+          "businessMobile": "0909-099-9000",
+          "businessName": "HEALER",
+          "businessPostalCode": "2621",
+          "businessType": "Single",
+          "dateOfApplication": "2026-02-12",
+          "emergencyContactMobile": "8979-949-4949",
+          "emergencyContactName": "BASNAB",
+          "firstName": "KINGAJ",
+          "incentiveEntity": "",
+          "lastName": "CHESTAIB",
+          "lessorName": "",
+          "middleName": "HAHJJ",
+          "ownerAddress": "SABABGAB",
+          "ownerEmail": "AHH@GANILCMI",
+          "ownerMobile": "9494-999-4499",
+          "ownerPostalCode": "2622",
+          "paymentMode": "Annually",
+          "placeRented": false,
+          "registrationDate": "2026-02-12",
+          "registrationNo": "388277276",
+          "taxIncentive": "No",
+          "tin": "2200749",
+          "totalEmployees": "1",
+          "totalFemaleEmployees": "0",
+          "tradeName": ""
+        },
+        "meta": {
+          "applicantName": "KINGAJ CHESTAIB",
+          "applicantUid": "LSAb7V2gZTRgYBxryOFnwDakB5n1",
+          "applicationType": "Renewal",
+          "businessName": "HEALER",
+          "businessType": "Single",
+          "createdAt": 1770872283555,
+          "feeEstimateTotal": 10003090,
+          "feesComputedAt": 1770872369068,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_review",
+          "paymentMode": "Annually",
+          "status": "submitted",
+          "updatedAt": 1770872369068
+        },
+        "requirements": {
+          "Barangay Clearance": {
+            "_exists": true,
+            "chat": {
+              "-OlFQPuPDkD276qds_wk": {
+                "senderRole": "admin",
+                "senderUid": "FtinB2j5svObUiScWT9AAbepNvk2",
+                "text": "asd",
+                "ts": 1770875889188
+              }
+            },
+            "files": {
+              "-OlFCu1Q0K9w8YVeIsVr": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OlFCdaH5JNc22-LZigH%2FBarangay_Clearance%2F-OlFCu1Q0K9w8YVeIsVr.jpg?alt=media&token=5f47377d-086b-45c0-8988-bb6b33346543",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OlFCdaH5JNc22-LZigH/Barangay_Clearance/-OlFCu1Q0K9w8YVeIsVr.jpg",
+                "uploadedAt": 1770876552828
+              }
+            }
+          },
+          "DTI": {
+            "_exists": true,
+            "files": {
+              "-OlFCxdBjGhwKfr3_qzv": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OlFCdaH5JNc22-LZigH%2FDTI%2F-OlFCxdBjGhwKfr3_qzv.jpg?alt=media&token=831b9d66-b506-4790-9df9-11aeaff74483",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OlFCdaH5JNc22-LZigH/DTI/-OlFCxdBjGhwKfr3_qzv.jpg",
+                "uploadedAt": 1770872368818
+              }
+            }
+          },
+          "Fire Safety Certificate": {
+            "_exists": true,
+            "files": {
+              "-OlFCvE_s6Cuxfphgz1H": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OlFCdaH5JNc22-LZigH%2FFire_Safety_Certificate%2F-OlFCvE_s6Cuxfphgz1H.jpg?alt=media&token=b2fe452e-e273-44b1-aa79-c32ba9752682",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OlFCdaH5JNc22-LZigH/Fire_Safety_Certificate/-OlFCvE_s6Cuxfphgz1H.jpg",
+                "uploadedAt": 1770872360463
+              }
+            }
+          },
+          "Police Clearance": {
+            "_exists": true,
+            "files": {
+              "-OlFCsibsSs6hLlYFp0R": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OlFCdaH5JNc22-LZigH%2FPolice_Clearance%2F-OlFCsibsSs6hLlYFp0R.jpg?alt=media&token=4f25ec20-9504-4e54-aeb8-06676ec6c4b2",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OlFCdaH5JNc22-LZigH/Police_Clearance/-OlFCsibsSs6hLlYFp0R.jpg",
+                "uploadedAt": 1770872350278
+              }
+            }
+          },
+          "Sanitary Permit": {
+            "_exists": true,
+            "files": {
+              "-OlFCwWN5ogBLcSvAV6B": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OlFCdaH5JNc22-LZigH%2FSanitary_Permit%2F-OlFCwWN5ogBLcSvAV6B.jpg?alt=media&token=116d9413-63d0-409e-813f-6100730aa908",
+                "status": "approved",
+                "storagePath": "BusinessApplications/-OlFCdaH5JNc22-LZigH/Sanitary_Permit/-OlFCwWN5ogBLcSvAV6B.jpg",
+                "uploadedAt": 1770872364919
+              }
+            }
+          }
+        },
+        "status": "Pending Update Review"
+      },
+      "-OlZA8kvRaWnDr3_j-mX": {
+        "draftFees": {
+          "breakdown": {
+            "Certificate (Tricycle)": 100,
+            "DST (Tricycle)": 120,
+            "Line Permit (Tricycle)": 20,
+            "Mayor's Permit (Tricycle)": 200,
+            "Plate Number Fee (Tricycle)": 100,
+            "Sanitary Permit (Tricycle)": 100,
+            "Tourism Certificate (Tricycle)": 100,
+            "Tricycle Franchise Fee": 3000,
+            "Tricycle Garbage Fee": 100,
+            "Tricycle Stickers Fee": 200,
+            "Tricycle Supervision Fee": 200
+          },
+          "computedAt": 1771207171609,
+          "inputs": {
+            "alcoholRule": "Retail alcohol fee follows the same size tier when applicable.",
+            "applicationType": "New",
+            "basisLabel": "Capitalization",
+            "basisTotal": 0,
+            "businessTax": 0,
+            "businessType": "Single",
+            "cedulaExcluded": true,
+            "cedulaNote": "Community Tax Certificate (Cedula) will be calculated by the Municipal Treasury and is not included in this estimate.",
+            "estimateDisabled": false,
+            "grossTotal": 0,
+            "grossTotalInt": 0,
+            "hasPermitBasis": false,
+            "hasRetailStore": false,
+            "hasTricycle": true,
+            "lpgRule": "500",
+            "mayorsPermitBaseRule": "Based on the line of business schedule; size tiers use capitalization or gross sales.",
+            "mayorsPermitTotal": 0,
+            "taxApplied": false,
+            "taxBasisTotal": 0,
+            "tobaccoRule": "Retail 500; Wholesale 1500",
+            "tricycleFeesTotal": 4240,
+            "tricycleUnits": 2,
+            "zoningFee": 150
+          },
+          "rulesVersion": "v12-2026-02-construction-tax-centavos",
+          "total": 4240
+        },
+        "draftForm": {
+          "activities": [
+            {
+              "capitalization": "",
+              "grossSales": "",
+              "lineOfBusiness": "Tricycle",
+              "otherFoodHandlerType": "",
+              "secondaryUnits": "",
+              "sellsAlcohol": false,
+              "sellsLpg": false,
+              "sellsTobacco": false,
+              "tobaccoWholesale": false,
+              "tricycleUnits": "2"
+            }
+          ],
+          "applicationType": "New",
+          "businessAddress": "LAGAN, SABANGAN, MOUNTAIN PROVINCE",
+          "businessEmail": "SJSJSK@GMAIL.COM",
+          "businessMobile": "0978-764-9494",
+          "businessName": "JS",
+          "businessPostalCode": "2622",
+          "businessType": "Single",
+          "dateOfApplication": "2026-02-16",
+          "emergencyContactMobile": "3564-6",
+          "emergencyContactName": "72727",
+          "firstName": "HASU",
+          "incentiveEntity": "",
+          "lastName": "HASU",
+          "lessorName": "",
+          "middleName": "HAUS",
+          "ownerAddress": "LAGAN, SABANGAN, MOUNTAIN PROVINCE",
+          "ownerEmail": "HASU@GMAUL.COM",
+          "ownerMobile": "0979-784-0464",
+          "ownerPostalCode": "2622",
+          "paymentMode": "Annually",
+          "placeRented": false,
+          "registrationDate": "2026-02-16",
+          "registrationNo": "8228828",
+          "taxIncentive": "No",
+          "tin": "228",
+          "totalEmployees": "1",
+          "totalFemaleEmployees": "1",
+          "tradeName": "JSJD"
+        },
+        "meta": {
+          "applicantName": "HASU HASU",
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "applicationType": "New",
+          "businessName": "JS",
+          "businessType": "Single",
+          "createdAt": 1771207171609,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "paymentMode": "Annually",
+          "status": "draft",
+          "updatedAt": 1771207171609
+        }
+      },
+      "-OlZBirzuzeVgJCzKVEJ": {
+        "draftFees": {
+          "breakdown": {
+            "DST": 90,
+            "Mayor's Clearance": 200,
+            "Mayor's Permit": 2800,
+            "Sanitary Permit": 100,
+            "Subscription Fee": 100,
+            "Weights and Measure": 100,
+            "Zoning Fee": 150
+          },
+          "computedAt": 1771207585806,
+          "inputs": {
+            "alcoholRule": "Retail alcohol fee follows the same size tier when applicable.",
+            "applicationType": "New",
+            "basisLabel": "Capitalization",
+            "basisTotal": 300000,
+            "businessTax": 0,
+            "businessType": "Single",
+            "cedulaExcluded": true,
+            "cedulaNote": "Community Tax Certificate (Cedula) will be calculated by the Municipal Treasury and is not included in this estimate.",
+            "estimateDisabled": false,
+            "grossTotal": 300000,
+            "grossTotalInt": 300000,
+            "hasPermitBasis": true,
+            "hasRetailStore": true,
+            "hasTricycle": false,
+            "lpgRule": "500",
+            "mayorsPermitBaseRule": "Based on the line of business schedule; size tiers use capitalization or gross sales.",
+            "mayorsPermitByLob": {
+              "Activity 1 - Sari-sari store": {
+                "alcohol": 800,
+                "base": 1000,
+                "baseNote": "Based on total capitalization",
+                "lpg": 500,
+                "tobaccoRetail": 500
+              }
+            },
+            "mayorsPermitTotal": 2800,
+            "taxApplied": false,
+            "taxBasisTotal": 300000,
+            "tobaccoRule": "Retail 500; Wholesale 1500",
+            "tricycleFeesTotal": 0,
+            "tricycleUnits": 0,
+            "zoningFee": 150
+          },
+          "rulesVersion": "v12-2026-02-construction-tax-centavos",
+          "total": 3540
+        },
+        "draftForm": {
+          "activities": [
+            {
+              "capitalization": "300000",
+              "grossSales": "",
+              "lineOfBusiness": "Sari-sari store",
+              "otherFoodHandlerType": "",
+              "secondaryUnits": "",
+              "sellsAlcohol": true,
+              "sellsLpg": true,
+              "sellsTobacco": true,
+              "tobaccoWholesale": false,
+              "tricycleUnits": ""
+            }
+          ],
+          "applicationType": "New",
+          "businessAddress": "LOSAD, SABANGAN, MOUNTAIN PROVINCE",
+          "businessEmail": "BSJSJ@GMAILC.COM",
+          "businessMobile": "0797-076-7697",
+          "businessName": "NXJD",
+          "businessPostalCode": "2622",
+          "businessType": "Single",
+          "dateOfApplication": "2026-02-16",
+          "emergencyContactMobile": "0977-967-7994",
+          "emergencyContactName": "ZNZNN",
+          "firstName": "JDKD",
+          "incentiveEntity": "",
+          "lastName": "SUB",
+          "lessorName": "",
+          "middleName": "JXJZ",
+          "ownerAddress": "LOSAD, SABANGAN, MOUNTAIN PROVINCE",
+          "ownerEmail": "SBSB@GMAIL.COM",
+          "ownerMobile": "0797-797-9797",
+          "ownerPostalCode": "2622",
+          "paymentMode": "Semi-Annually",
+          "placeRented": false,
+          "registrationDate": "2026-02-10",
+          "registrationNo": "383838",
+          "taxIncentive": "No",
+          "tin": "83838",
+          "totalEmployees": "0",
+          "totalFemaleEmployees": "0",
+          "tradeName": "BXJZJ"
+        },
+        "meta": {
+          "applicantName": "JDKD SUB",
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "applicationType": "New",
+          "businessName": "NXJD",
+          "businessType": "Single",
+          "createdAt": 1771207585806,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "paymentMode": "Semi-Annually",
+          "status": "draft",
+          "updatedAt": 1771207585806
+        }
+      },
+      "-OlZBsopkJZBlllATiQb": {
+        "draftFees": {
+          "breakdown": {
+            "Certificate (Tricycle)": 100,
+            "DST (Tricycle)": 120,
+            "Line Permit (Tricycle)": 20,
+            "Mayor's Permit (Tricycle)": 200,
+            "Plate Number Fee (Tricycle)": 100,
+            "Sanitary Permit (Tricycle)": 100,
+            "Tourism Certificate (Tricycle)": 100,
+            "Tricycle Franchise Fee": 3000,
+            "Tricycle Garbage Fee": 100,
+            "Tricycle Stickers Fee": 200,
+            "Tricycle Supervision Fee": 200
+          },
+          "computedAt": 1771207626489,
+          "inputs": {
+            "alcoholRule": "Retail alcohol fee follows the same size tier when applicable.",
+            "applicationType": "New",
+            "basisLabel": "Capitalization",
+            "basisTotal": 0,
+            "businessTax": 0,
+            "businessType": "Single",
+            "cedulaExcluded": true,
+            "cedulaNote": "Community Tax Certificate (Cedula) will be calculated by the Municipal Treasury and is not included in this estimate.",
+            "estimateDisabled": false,
+            "grossTotal": 300000,
+            "grossTotalInt": 300000,
+            "hasPermitBasis": false,
+            "hasRetailStore": false,
+            "hasTricycle": true,
+            "lpgRule": "500",
+            "mayorsPermitBaseRule": "Based on the line of business schedule; size tiers use capitalization or gross sales.",
+            "mayorsPermitTotal": 0,
+            "taxApplied": false,
+            "taxBasisTotal": 300000,
+            "tobaccoRule": "Retail 500; Wholesale 1500",
+            "tricycleFeesTotal": 4240,
+            "tricycleUnits": 2,
+            "zoningFee": 150
+          },
+          "rulesVersion": "v12-2026-02-construction-tax-centavos",
+          "total": 4240
+        },
+        "draftForm": {
+          "activities": [
+            {
+              "capitalization": "300000",
+              "grossSales": "",
+              "lineOfBusiness": "Tricycle",
+              "otherFoodHandlerType": "",
+              "secondaryUnits": "",
+              "sellsAlcohol": false,
+              "sellsLpg": false,
+              "sellsTobacco": false,
+              "tobaccoWholesale": false,
+              "tricycleUnits": "2"
+            }
+          ],
+          "applicationType": "New",
+          "businessAddress": "LOSAD, SABANGAN, MOUNTAIN PROVINCE",
+          "businessEmail": "BSJSJ@GMAILC.COM",
+          "businessMobile": "0797-076-7697",
+          "businessName": "NXJD",
+          "businessPostalCode": "2622",
+          "businessType": "Single",
+          "dateOfApplication": "2026-02-16",
+          "emergencyContactMobile": "0977-967-7994",
+          "emergencyContactName": "ZNZNN",
+          "firstName": "JDKD",
+          "incentiveEntity": "",
+          "lastName": "SUB",
+          "lessorName": "",
+          "middleName": "JXJZ",
+          "ownerAddress": "LOSAD, SABANGAN, MOUNTAIN PROVINCE",
+          "ownerEmail": "SBSB@GMAIL.COM",
+          "ownerMobile": "0797-797-9797",
+          "ownerPostalCode": "2622",
+          "paymentMode": "Semi-Annually",
+          "placeRented": false,
+          "registrationDate": "2026-02-10",
+          "registrationNo": "383838",
+          "taxIncentive": "No",
+          "tin": "83838",
+          "totalEmployees": "0",
+          "totalFemaleEmployees": "0",
+          "tradeName": "BXJZJ"
+        },
+        "meta": {
+          "applicantName": "JDKD SUB",
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "applicationType": "New",
+          "businessName": "NXJD",
+          "businessType": "Single",
+          "createdAt": 1771207626489,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_uploads",
+          "paymentMode": "Semi-Annually",
+          "status": "draft",
+          "updatedAt": 1771207626489
+        }
+      },
+      "-OlZC3kgUZLVq6jKMWoD": {
+        "fees": {
+          "breakdown": {
+            "DST": 90,
+            "Mayor's Clearance": 200,
+            "Mayor's Permit": 600,
+            "Sanitary Permit": 100,
+            "Subscription Fee": 100,
+            "Weights and Measure": 100,
+            "Zoning Fee": 150
+          },
+          "computedAt": 1771207795260,
+          "inputs": {
+            "alcoholRule": "Retail alcohol fee follows the same size tier when applicable.",
+            "applicationType": "New",
+            "basisLabel": "Capitalization",
+            "basisTotal": 300000,
+            "businessTax": 0,
+            "businessType": "Single",
+            "cedulaExcluded": true,
+            "cedulaNote": "Community Tax Certificate (Cedula) will be calculated by the Municipal Treasury and is not included in this estimate.",
+            "estimateDisabled": false,
+            "grossTotal": 300000,
+            "grossTotalInt": 300000,
+            "hasPermitBasis": true,
+            "hasRetailStore": true,
+            "hasTricycle": false,
+            "lpgRule": "500",
+            "mayorsPermitBaseRule": "Based on the line of business schedule; size tiers use capitalization or gross sales.",
+            "mayorsPermitByLob": {
+              "Activity 1 - Restaurant": {
+                "base": 600,
+                "baseNote": "Based on total capitalization"
+              }
+            },
+            "mayorsPermitTotal": 600,
+            "taxApplied": false,
+            "taxBasisTotal": 300000,
+            "tobaccoRule": "Retail 500; Wholesale 1500",
+            "tricycleFeesTotal": 0,
+            "tricycleUnits": 0,
+            "zoningFee": 150
+          },
+          "rulesVersion": "v12-2026-02-construction-tax-centavos",
+          "total": 1340
+        },
+        "form": {
+          "activities": [
+            {
+              "capitalization": "300000",
+              "grossSales": "",
+              "lineOfBusiness": "Restaurant",
+              "otherFoodHandlerType": "",
+              "secondaryUnits": "",
+              "sellsAlcohol": false,
+              "sellsLpg": false,
+              "sellsTobacco": false,
+              "tobaccoWholesale": false,
+              "tricycleUnits": ""
+            }
+          ],
+          "applicationType": "New",
+          "businessAddress": "LOSAD, SABANGAN, MOUNTAIN PROVINCE",
+          "businessEmail": "BSJSJ@GMAILC.COM",
+          "businessMobile": "0797-076-7697",
+          "businessName": "NXJD",
+          "businessPostalCode": "2622",
+          "businessType": "Single",
+          "dateOfApplication": "2026-02-16",
+          "emergencyContactMobile": "0977-967-7994",
+          "emergencyContactName": "ZNZNN",
+          "firstName": "JDKD",
+          "incentiveEntity": "",
+          "lastName": "SUB",
+          "lessorName": "",
+          "middleName": "JXJZ",
+          "ownerAddress": "LOSAD, SABANGAN, MOUNTAIN PROVINCE",
+          "ownerEmail": "SBSB@GMAIL.COM",
+          "ownerMobile": "0797-797-9797",
+          "ownerPostalCode": "2622",
+          "paymentMode": "Semi-Annually",
+          "placeRented": false,
+          "registrationDate": "2026-02-10",
+          "registrationNo": "383838",
+          "taxIncentive": "No",
+          "tin": "83838",
+          "totalEmployees": "0",
+          "totalFemaleEmployees": "0",
+          "tradeName": "BXJZJ"
+        },
+        "meta": {
+          "applicantName": "JDKD SUB",
+          "applicantUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+          "applicationType": "New",
+          "businessName": "NXJD",
+          "businessType": "Single",
+          "createdAt": 1771207675413,
+          "feeEstimateTotal": 1340,
+          "feesComputedAt": 1771207985884,
+          "municipality": "Sabangan",
+          "overallStatus": "pending_review",
+          "paymentMode": "Semi-Annually",
+          "status": "submitted",
+          "updatedAt": 1771207985884
+        },
+        "requirements": {
+          "Barangay Clearance": {
+            "_exists": true,
+            "files": {
+              "-OlZC_KvxeAd0Puqo3gF": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OlZC3kgUZLVq6jKMWoD%2FBarangay_Clearance%2F-OlZC_KvxeAd0Puqo3gF.jpg?alt=media&token=d2162b45-0141-4708-97e6-55bbeaea1e0b",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-OlZC3kgUZLVq6jKMWoD/Barangay_Clearance/-OlZC_KvxeAd0Puqo3gF.jpg",
+                "uploadedAt": 1771207835276
+              }
+            }
+          },
+          "DTI Registration": {
+            "_exists": true,
+            "files": {
+              "-OlZCXIrrAvlmHtSGwHF": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OlZC3kgUZLVq6jKMWoD%2FDTI_Registration%2F-OlZCXIrrAvlmHtSGwHF.jpg?alt=media&token=942536ec-0264-42f9-b4d8-5d50f6086f75",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-OlZC3kgUZLVq6jKMWoD/DTI_Registration/-OlZCXIrrAvlmHtSGwHF.jpg",
+                "uploadedAt": 1771207808644
+              }
+            }
+          },
+          "Fire Safety Inspection Certificate": {
+            "_exists": true,
+            "files": {
+              "-OlZCt966oaSGkci39Nj": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OlZC3kgUZLVq6jKMWoD%2FFire_Safety_Inspection_Certificate%2F-OlZCt966oaSGkci39Nj.jpg?alt=media&token=51ad293e-fb26-4776-8588-c46497c82dab",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-OlZC3kgUZLVq6jKMWoD/Fire_Safety_Inspection_Certificate/-OlZCt966oaSGkci39Nj.jpg",
+                "uploadedAt": 1771207921220
+              }
+            }
+          },
+          "Food Handler's Certificate": {
+            "_exists": true,
+            "files": {
+              "-OlZD8JdQf1-69127fDu": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OlZC3kgUZLVq6jKMWoD%2FFood_Handler_s_Certificate%2F-OlZD8JdQf1-69127fDu.jpg?alt=media&token=89de5b8e-a3c2-4d64-abb9-561b97060af8",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-OlZC3kgUZLVq6jKMWoD/Food_Handler_s_Certificate/-OlZD8JdQf1-69127fDu.jpg",
+                "uploadedAt": 1771207985719
+              }
+            }
+          },
+          "Police Clearance": {
+            "_exists": true,
+            "files": {
+              "-OlZCfqiar_2LK36LttA": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OlZC3kgUZLVq6jKMWoD%2FPolice_Clearance%2F-OlZCfqiar_2LK36LttA.jpg?alt=media&token=b259c4a0-9a50-4c14-b8d2-36c97e62de66",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-OlZC3kgUZLVq6jKMWoD/Police_Clearance/-OlZCfqiar_2LK36LttA.jpg",
+                "uploadedAt": 1771207862537
+              }
+            }
+          },
+          "Sanitary Permit": {
+            "_exists": true,
+            "files": {
+              "-OlZD-oeCAJzgP9T69Cw": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OlZC3kgUZLVq6jKMWoD%2FSanitary_Permit%2F-OlZD-oeCAJzgP9T69Cw.jpg?alt=media&token=0cd798ad-648b-489f-a91b-458de7fe1f55",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-OlZC3kgUZLVq6jKMWoD/Sanitary_Permit/-OlZD-oeCAJzgP9T69Cw.jpg",
+                "uploadedAt": 1771207956036
+              }
+            }
+          },
+          "Zoning Certification (MPDO)": {
+            "_exists": true,
+            "files": {
+              "-OlZCmWaQDWaDb8i0xzT": {
+                "adminNote": "",
+                "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/BusinessApplications%2F-OlZC3kgUZLVq6jKMWoD%2FZoning_Certification__MPDO_%2F-OlZCmWaQDWaDb8i0xzT.jpg?alt=media&token=60068d92-12ef-423c-9cc6-55fb54fefe0e",
+                "status": "pending",
+                "storagePath": "BusinessApplications/-OlZC3kgUZLVq6jKMWoD/Zoning_Certification__MPDO_/-OlZCmWaQDWaDb8i0xzT.jpg",
+                "uploadedAt": 1771207889840
+              }
+            }
+          }
+        }
       }
     },
     "posts": {
@@ -1679,6 +2365,12 @@
             "senderUid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
             "text": "hdhd",
             "ts": 1770777966408
+          },
+          "-OlABiVo90GqZwhD3oSf": {
+            "senderRole": "admin",
+            "senderUid": "FtinB2j5svObUiScWT9AAbepNvk2",
+            "text": "yes boss",
+            "ts": 1770788156075
           }
         },
         "fees": {
@@ -1713,9 +2405,9 @@
             "_exists": true,
             "files": {
               "-Ol9F4EcN9a4z3fyj_z7": {
-                "adminNote": "asd",
+                "adminNote": "",
                 "downloadUrl": "https://firebasestorage.googleapis.com/v0/b/sabangan-app.firebasestorage.app/o/MayorsClearanceApplication%2FvFFN4wHnYKOVY28N6Xxe1IDXTnH3%2FBarangay_Clearance%2F-Ol9F4EcN9a4z3fyj_z7.jpg?alt=media&token=30d4e607-58b8-48e9-8cab-1b36f1c838e1",
-                "status": "rejected",
+                "status": "approved",
                 "storagePath": "MayorsClearanceApplication/vFFN4wHnYKOVY28N6Xxe1IDXTnH3/Barangay_Clearance/-Ol9F4EcN9a4z3fyj_z7.jpg",
                 "uploadedAt": 1770772262275
               }
@@ -1780,6 +2472,20 @@
     }
   },
   "mayors_clearance_files": {
+    "2024": {
+      "createdAt": 1770968138726,
+      "createdBy": "FtinB2j5svObUiScWT9AAbepNvk2",
+      "dataBase64": "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",
+      "fileName": "Mayor's Clearance 2024.xlsx",
+      "rowCount": 1
+    },
+    "2026": {
+      "createdAt": 1770973160822,
+      "createdBy": "FtinB2j5svObUiScWT9AAbepNvk2",
+      "dataBase64": "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",
+      "fileName": "Mayor's Clearance 2026.xlsx",
+      "rowCount": 8
+    },
     "-Ol9hdvS9O3s7VwzkHid": {
       "createdAt": 1770780010689,
       "createdBy": "FtinB2j5svObUiScWT9AAbepNvk2",
@@ -1968,6 +2674,13 @@
       "dataBase64": "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",
       "fileName": "Mayor's Clearance 2026.xlsx",
       "rowCount": 6
+    },
+    "-OlA5StXVSwMKA5Iod1x": {
+      "createdAt": 1770786515170,
+      "createdBy": "FtinB2j5svObUiScWT9AAbepNvk2",
+      "dataBase64": "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",
+      "fileName": "Mayor's Clearance 2026.xlsx",
+      "rowCount": 3
     }
   },
   "users": {
@@ -2152,7 +2865,7 @@
         "emailLower": "wizassasinmontelli@gmail.com",
         "emailVerified": true,
         "firstName": "Bus",
-        "lastLoginAt": 1770777883256,
+        "lastLoginAt": 1771208507891,
         "lastName": "Das",
         "middleName": "Yam",
         "number": "+639496940616",
@@ -2184,6 +2897,28 @@
           "lastName": "Kingaw",
           "middleName": "Galsi",
           "passwordHash": "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"
+        },
+        "-OlEwL47kt7qTMwJHWHt": {
+          "createdAt": 1770867747770,
+          "email": "shado@gmail.com",
+          "emailVerified": true,
+          "firstName": "asd",
+          "lastName": "asd",
+          "middleName": "asd",
+          "passwordHash": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+          "uid": "CiCVxgwb8eO1oHsZ6cBcytmDMJm1"
+        }
+      },
+      "treasury": {
+        "-Ol_A1ah395OneMYJ-Oq": {
+          "createdAt": 1771223919346,
+          "email": "test@gmail.com",
+          "emailVerified": true,
+          "firstName": "christian",
+          "lastName": "kingaw",
+          "middleName": "galsi",
+          "passwordHash": "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8",
+          "uid": "mys089y6WefjN8sGcwm9R8wOUC83"
         }
       }
     }

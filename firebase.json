@@ -1,11 +1,7 @@
 {
-  "database": {
-    "rules": "database.rules.json"
-  },
   "firestore": {
     "database": "(default)",
     "location": "asia-southeast1",
-    "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
   "hosting": {
@@ -27,9 +23,6 @@
         }
       }
     ]
-  },
-  "storage": {
-    "rules": "storage.rules"
   },
   "emulators": {
     "auth": {

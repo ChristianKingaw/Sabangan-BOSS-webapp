@@ -19,6 +19,7 @@ import { toast } from "sonner"
 import { onValue, ref, get } from "firebase/database"
 import { onAuthStateChanged } from "firebase/auth"
 import { app as firebaseApp, realtimeDb, auth as firebaseAuth } from "@/database/firebase"
+import { watchTreasuryFeesByClient, type TreasuryFeeAssessmentRecord } from "@/database/treasury"
 import {
   BUSINESS_APPLICATION_PATH,
   buildRequirementNotificationId,
@@ -36,6 +37,7 @@ import { PDFDocument } from "pdf-lib"
 
 const MS_IN_DAY = 24 * 60 * 60 * 1000
 const NEW_LOOKBACK_DAYS = 30
+const PAYMENT_REQUIREMENT_ITEMS = ["Cedula", "Official Receipt"] as const
 
 const getClientNotificationId = (record: BusinessApplicationRecord | null) =>
   record ? buildRequirementNotificationId(record) ?? `requirements-${record.id}` : null
@@ -232,6 +234,7 @@ function ClientRequirementsContent() {
   const [loadingFiles, setLoadingFiles] = useState<Set<string>>(new Set())
   const [isPersisting, setIsPersisting] = useState(false)
   const [isAuthReady, setIsAuthReady] = useState(false)
+  const [treasuryFeesByClient, setTreasuryFeesByClient] = useState<Record<string, TreasuryFeeAssessmentRecord>>({})
 
   // Define state variables for docx modal and content
   const [docxContent, setDocxContent] = useState<string | null>(null)
@@ -240,11 +243,17 @@ function ClientRequirementsContent() {
   const [docxPdfUrl, setDocxPdfUrl] = useState<string | null>(null)
   const [isFormPreviewLoading, setIsFormPreviewLoading] = useState(false)
   const [isFormPreviewModalOpen, setIsFormPreviewModalOpen] = useState(false)
+  const [isFormPrintLoading, setIsFormPrintLoading] = useState(false)
+  const [isFormPreviewMerging, setIsFormPreviewMerging] = useState(false)
+  const [isFormPreviewMerged, setIsFormPreviewMerged] = useState(false)
   const [formPreviewUrl, setFormPreviewUrl] = useState<string | null>(null)
+  const [formPreviewHtml, setFormPreviewHtml] = useState<string | null>(null)
   const [formPreviewTempUrls, setFormPreviewTempUrls] = useState<string[]>([])
   const docxPreviewCancelRef = useRef(false)
   const formPreviewCancelRef = useRef(false)
   const formPreviewAbortRef = useRef<AbortController | null>(null)
+  const formPreviewPdfUnavailableRef = useRef(false)
+  const prewarmedPreviewSignatureRef = useRef<string>("")
 
   // Wait for Firebase Auth to be ready
   useEffect(() => {
@@ -358,6 +367,13 @@ function ClientRequirementsContent() {
   }, [getAuthInstance, isAuthReady])
 
   const requirements = client?.requirements ?? []
+  const hasApprovedRequirementFiles = useMemo(
+    () =>
+      requirements.some((req) =>
+        (req.files || []).some((f) => String(f.status || "").toLowerCase().includes("approve") && !!f.downloadUrl)
+      ),
+    [requirements]
+  )
   const hasRequirementUpdate = useMemo(
     () =>
       requirements.some((requirement) =>
@@ -392,6 +408,49 @@ function ClientRequirementsContent() {
     const fileName = activeDocument.file.fileName?.toLowerCase() ?? ""
     return fileName.endsWith(".docx")
   }, [activeDocument])
+
+  useEffect(() => {
+    const stop = watchTreasuryFeesByClient(
+      (records) => setTreasuryFeesByClient(records),
+      (err) => console.error("Failed to load treasury fee assessments for client requirements page", err)
+    )
+
+    return () => {
+      try {
+        stop()
+      } catch {}
+    }
+  }, [])
+
+  const currentTreasuryAssessment = useMemo(() => {
+    if (!client) return null
+
+    const candidates = [
+      String(client.applicantUid ?? "").trim(),
+      String(client.form?.applicantUid ?? "").trim(),
+      String(client.id ?? "").trim(),
+    ].filter(Boolean)
+
+    let latest: TreasuryFeeAssessmentRecord | null = null
+    for (const candidate of Array.from(new Set(candidates))) {
+      const record = treasuryFeesByClient[candidate]
+      if (!record) continue
+      if (!latest) {
+        latest = record
+        continue
+      }
+      const latestTs = latest.updatedAt ?? latest.createdAt ?? 0
+      const incomingTs = record.updatedAt ?? record.createdAt ?? 0
+      if (incomingTs >= latestTs) {
+        latest = record
+      }
+    }
+
+    return latest
+  }, [client, treasuryFeesByClient])
+
+  const isCedulaPaid = Boolean(String(currentTreasuryAssessment?.cedula_no ?? "").trim())
+  const isOfficialReceiptPaid = Boolean(String(currentTreasuryAssessment?.or_no ?? "").trim())
 
   useEffect(() => {
     if (!id) {
@@ -901,28 +960,85 @@ function ClientRequirementsContent() {
     })
   }, [])
 
-  const handlePreviewApplicationForm = useCallback(async () => {
-    // reset/prepare cancel state and abort controller
-    formPreviewCancelRef.current = false
-    formPreviewAbortRef.current?.abort()
-    formPreviewAbortRef.current = new AbortController()
+  const mergeApprovedRequirementPdfs = useCallback(
+    async ({ basePdfUrl, signal }: { basePdfUrl: string; signal?: AbortSignal }) => {
+      const tempUrls: string[] = []
+      const pdfSources: string[] = [basePdfUrl]
 
-    setIsFormPreviewModalOpen(true)
-    setIsFormPreviewLoading(true)
-    setFormPreviewUrl(null)
-    cleanupFormPreviewUrls(formPreviewTempUrls)
-    setFormPreviewTempUrls([])
+      for (const req of client?.requirements || []) {
+        for (const f of req.files || []) {
+          if (signal?.aborted || formPreviewCancelRef.current) {
+            cleanupFormPreviewUrls(tempUrls)
+            return null
+          }
+          try {
+            const status = String(f.status || "").toLowerCase()
+            if (!status.includes("approve")) continue
+            if (!f.downloadUrl) continue
 
-    try {
-      const currentUser = getAuthInstance()?.currentUser
-      if (!currentUser) {
-        toast.error("You must be logged in to preview the application form.")
-        router.replace("/")
-        return
+            const proxyUrl = `/api/proxy?url=${encodeURIComponent(f.downloadUrl)}`
+            const resp = await fetch(proxyUrl, { signal })
+            if (!resp.ok) continue
+            const blob = await resp.blob()
+            const contentType = (blob.type || "").toLowerCase()
+
+            if (contentType.includes("pdf")) {
+              const url = URL.createObjectURL(blob)
+              tempUrls.push(url)
+              pdfSources.push(url)
+            } else if (contentType.startsWith("image/")) {
+              const url = await convertImageBlobToPdfUrl(blob)
+              tempUrls.push(url)
+              pdfSources.push(url)
+            }
+          } catch (err) {
+            console.warn("Skipping requirement file for preview merge", err)
+          }
+        }
       }
 
-      // Always force-refresh token to avoid stale/expired auth when previewing
-      let token = await currentUser.getIdToken(true)
+      if (signal?.aborted || formPreviewCancelRef.current) {
+        cleanupFormPreviewUrls(tempUrls)
+        return null
+      }
+
+      if (pdfSources.length <= 1) {
+        cleanupFormPreviewUrls(tempUrls)
+        return { mergedUrl: null as string | null, tempUrls: [] as string[] }
+      }
+
+      const mergedBlob = await mergePdfUrls(pdfSources)
+      const mergedUrl = URL.createObjectURL(mergedBlob)
+      tempUrls.push(mergedUrl)
+      return { mergedUrl, tempUrls }
+    },
+    [cleanupFormPreviewUrls, client, convertImageBlobToPdfUrl]
+  )
+
+  const requestApplicationFormPdf = useCallback(
+    async ({
+      signal,
+      forceRefreshToken = true,
+      silent = false,
+      redirectOnAuthFail = true,
+    }: {
+      signal?: AbortSignal
+      forceRefreshToken?: boolean
+      silent?: boolean
+      redirectOnAuthFail?: boolean
+    } = {}) => {
+      const currentUser = getAuthInstance()?.currentUser
+      if (!currentUser) {
+        if (!silent) {
+          toast.error("You must be logged in to preview the application form.")
+        }
+        if (redirectOnAuthFail) {
+          router.replace("/")
+        }
+        return null
+      }
+
+      let token = await currentUser.getIdToken(forceRefreshToken)
       let response = await fetch("/api/export/docx-to-pdf", {
         method: "POST",
         headers: {
@@ -932,7 +1048,7 @@ function ClientRequirementsContent() {
           "x-dev-bypass": process.env.NODE_ENV !== "production" ? "1" : "0",
         },
         body: JSON.stringify({ applicationId: id }),
-        signal: formPreviewAbortRef.current?.signal,
+        signal,
       })
 
       if (response.status === 401) {
@@ -945,68 +1061,214 @@ function ClientRequirementsContent() {
             "x-dev-bypass": process.env.NODE_ENV !== "production" ? "1" : "0",
           },
           body: JSON.stringify({ applicationId: id }),
-          signal: formPreviewAbortRef.current?.signal,
+          signal,
         })
+      }
+
+      return response
+    },
+    [getAuthInstance, id, router]
+  )
+
+  const fallbackToDocxFormPreview = useCallback(
+    async (signal?: AbortSignal) => {
+      const currentUser = getAuthInstance()?.currentUser
+      if (!currentUser) {
+        toast.error("You must be logged in to preview the application form.")
+        return false
+      }
+
+      const token = await currentUser.getIdToken(true)
+      const docxResponse = await fetch("/api/export/docx", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "x-dev-bypass": process.env.NODE_ENV !== "production" ? "1" : "0",
+        },
+        body: JSON.stringify({ applicationId: id }),
+        signal,
+      })
+
+      if (!docxResponse.ok) {
+        const docxError = await docxResponse.json().catch(() => ({}))
+        toast.error((docxError?.error as string) || "Unable to preview application form.")
+        return false
+      }
+
+      const docxBlob = await docxResponse.blob()
+      const container = document.createElement("div")
+      await renderAsync(docxBlob, container)
+
+      if (formPreviewCancelRef.current) {
+        return false
+      }
+
+      setFormPreviewUrl(null)
+      setFormPreviewHtml(container.innerHTML)
+      setFormPreviewTempUrls([])
+      setIsFormPreviewMerged(false)
+      return true
+    },
+    [getAuthInstance, id]
+  )
+
+  const prewarmPreviewSignature = useMemo(() => {
+    if (!client?.id) return ""
+    try {
+      return `${client.id}:${JSON.stringify(client.form ?? {})}`
+    } catch {
+      return `${client.id}:fallback`
+    }
+  }, [client])
+
+  useEffect(() => {
+    if (!isAuthReady || !client?.id || !prewarmPreviewSignature) {
+      return
+    }
+    if (formPreviewPdfUnavailableRef.current) {
+      return
+    }
+
+    const auth = getAuthInstance()
+    if (!auth?.currentUser) {
+      return
+    }
+
+    if (prewarmedPreviewSignatureRef.current === prewarmPreviewSignature) {
+      return
+    }
+    prewarmedPreviewSignatureRef.current = prewarmPreviewSignature
+
+    const abortController = new AbortController()
+    const timerId = window.setTimeout(async () => {
+      try {
+        const response = await requestApplicationFormPdf({
+          signal: abortController.signal,
+          forceRefreshToken: false,
+          silent: true,
+          redirectOnAuthFail: false,
+        })
+        if (!response?.ok) {
+          if (response && response.status >= 500) {
+            formPreviewPdfUnavailableRef.current = true
+          }
+          return
+        }
+        // Read response body so the pre-warm request fully completes.
+        await response.arrayBuffer()
+      } catch (error) {
+        if ((error as any)?.name !== "AbortError") {
+          console.debug("Preview pre-warm failed", error)
+        }
+      }
+    }, 250)
+
+    return () => {
+      window.clearTimeout(timerId)
+      abortController.abort()
+    }
+  }, [client, getAuthInstance, isAuthReady, prewarmPreviewSignature, requestApplicationFormPdf])
+
+  const handlePreviewApplicationForm = useCallback(async () => {
+    // reset/prepare cancel state and abort controller
+    formPreviewCancelRef.current = false
+    formPreviewAbortRef.current?.abort()
+    formPreviewAbortRef.current = new AbortController()
+
+    setIsFormPreviewModalOpen(true)
+    setIsFormPreviewLoading(true)
+    setIsFormPreviewMerging(false)
+    setIsFormPreviewMerged(false)
+    setFormPreviewUrl(null)
+    setFormPreviewHtml(null)
+    cleanupFormPreviewUrls(formPreviewTempUrls)
+    setFormPreviewTempUrls([])
+
+    try {
+      if (formPreviewPdfUnavailableRef.current) {
+        const ok = await fallbackToDocxFormPreview(formPreviewAbortRef.current?.signal)
+        if (ok) {
+          toast.info("Server-side PDF conversion unavailable; showing DOCX preview.")
+        }
+        return
+      }
+
+      const response = await requestApplicationFormPdf({
+        signal: formPreviewAbortRef.current?.signal,
+        forceRefreshToken: true,
+        silent: false,
+        redirectOnAuthFail: true,
+      })
+      if (!response) {
+        return
       }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
         const message = (errorData?.error as string) || "Unable to preview application form."
-        toast.error(message)
-        return
-      }
+        const details = typeof errorData?.details === "string" ? errorData.details : ""
+        const lower = `${message} ${details}`.toLowerCase()
+        const isConverterFailure =
+          lower.includes("convert") ||
+          lower.includes("converter") ||
+          lower.includes("soffice") ||
+          lower.includes("econnrefused") ||
+          lower.includes("fetch failed")
 
-      const mainBlob = await response.blob()
-      const tempUrls: string[] = []
-      const pdfSources: string[] = []
+        if (!isConverterFailure) {
+          toast.error(message)
+          return
+        }
 
-      const mainUrl = URL.createObjectURL(mainBlob)
-      tempUrls.push(mainUrl)
-      pdfSources.push(mainUrl)
-
-      // Append approved requirement files as PDFs (convert images to PDF pages)
-      if (client) {
-        for (const req of client.requirements || []) {
-          for (const f of req.files || []) {
-            try {
-              const status = String(f.status || "").toLowerCase()
-              if (!status.includes("approve")) continue
-              if (!f.downloadUrl) continue
-
-              const proxyUrl = `/api/proxy?url=${encodeURIComponent(f.downloadUrl)}`
-              const resp = await fetch(proxyUrl, { signal: formPreviewAbortRef.current?.signal })
-              if (!resp.ok) continue
-              const blob = await resp.blob()
-              const contentType = (blob.type || "").toLowerCase()
-
-              if (contentType.includes("pdf")) {
-                const url = URL.createObjectURL(blob)
-                tempUrls.push(url)
-                pdfSources.push(url)
-              } else if (contentType.startsWith("image/")) {
-                const url = await convertImageBlobToPdfUrl(blob)
-                tempUrls.push(url)
-                pdfSources.push(url)
-              }
-            } catch (err) {
-              console.warn("Skipping requirement file for preview merge", err)
-            }
+        try {
+          formPreviewPdfUnavailableRef.current = true
+          const ok = await fallbackToDocxFormPreview(formPreviewAbortRef.current?.signal)
+          if (ok) {
+            toast.info("Server-side PDF conversion unavailable; showing DOCX preview.")
+          } else {
+            toast.error(message)
           }
+          return
+        } catch (fallbackError) {
+          console.error("Failed to fallback to DOCX preview", fallbackError)
+          toast.error(message)
+          return
         }
       }
 
-      if (formPreviewAbortRef.current?.signal.aborted || formPreviewCancelRef.current) {
-        // aborted while preparing sources
+      formPreviewPdfUnavailableRef.current = false
+      const mainBlob = await response.blob()
+      const tempUrls: string[] = []
+
+      const mainUrl = URL.createObjectURL(mainBlob)
+      tempUrls.push(mainUrl)
+
+      if (!hasApprovedRequirementFiles || formPreviewCancelRef.current) {
+        if (!formPreviewCancelRef.current) {
+          setFormPreviewTempUrls(tempUrls)
+          setFormPreviewUrl(mainUrl)
+          setFormPreviewHtml(null)
+          setIsFormPreviewMerged(false)
+        }
         return
       }
 
-      const mergedBlob = await mergePdfUrls(pdfSources)
-      const mergedUrl = URL.createObjectURL(mergedBlob)
-      tempUrls.push(mergedUrl)
+      setIsFormPreviewMerging(true)
+      const mergeSignal = formPreviewAbortRef.current?.signal
+      const result = await mergeApprovedRequirementPdfs({ basePdfUrl: mainUrl, signal: mergeSignal })
+      if (!result || formPreviewCancelRef.current) {
+        return
+      }
 
-      if (!formPreviewCancelRef.current) {
+      if (result.mergedUrl) {
+        setFormPreviewTempUrls([...tempUrls, ...result.tempUrls])
+        setFormPreviewUrl(result.mergedUrl)
+        setIsFormPreviewMerged(true)
+      } else {
         setFormPreviewTempUrls(tempUrls)
-        setFormPreviewUrl(mergedUrl)
+        setFormPreviewUrl(mainUrl)
+        setIsFormPreviewMerged(false)
       }
     } catch (error) {
       if ((error as any)?.name === "AbortError") {
@@ -1017,12 +1279,75 @@ function ClientRequirementsContent() {
       toast.error("Unable to preview application form.")
     } finally {
       if (!formPreviewCancelRef.current) {
-        setIsFormPreviewLoading(false)
-      } else {
-        setIsFormPreviewLoading(false)
+        setIsFormPreviewMerging(false)
+      }
+      setIsFormPreviewLoading(false)
+    }
+  }, [
+    cleanupFormPreviewUrls,
+    fallbackToDocxFormPreview,
+    formPreviewTempUrls,
+    hasApprovedRequirementFiles,
+    mergeApprovedRequirementPdfs,
+    requestApplicationFormPdf,
+  ])
+
+  const handlePrintApplicationForm = useCallback(async () => {
+    if (!formPreviewUrl || isFormPrintLoading) return
+
+    const printTitle = client?.applicantName ? `${client.applicantName} Application Form` : "Application Form"
+
+    if (isFormPreviewMerged) {
+      handlePrintPdf(formPreviewUrl, printTitle)
+      return
+    }
+
+    if (!hasApprovedRequirementFiles) {
+      handlePrintPdf(formPreviewUrl, printTitle)
+      return
+    }
+
+    setIsFormPrintLoading(true)
+    setIsFormPreviewMerging(true)
+    try { formPreviewAbortRef.current?.abort() } catch {}
+    const abortController = new AbortController()
+    formPreviewAbortRef.current = abortController
+
+    try {
+      const result = await mergeApprovedRequirementPdfs({ basePdfUrl: formPreviewUrl, signal: abortController.signal })
+      if (!result || formPreviewCancelRef.current) {
+        return
+      }
+
+      if (!result.mergedUrl) {
+        handlePrintPdf(formPreviewUrl, printTitle)
+        return
+      }
+
+      setFormPreviewTempUrls((prev) => [...prev, ...result.tempUrls])
+      setFormPreviewUrl(result.mergedUrl)
+      setIsFormPreviewMerged(true)
+      handlePrintPdf(result.mergedUrl, printTitle)
+    } catch (error) {
+      if ((error as any)?.name === "AbortError") {
+        return
+      }
+      console.error("Failed to prepare merged application form print", error)
+      toast.error("Unable to prepare printable application form.")
+    } finally {
+      setIsFormPrintLoading(false)
+      if (!formPreviewCancelRef.current) {
+        setIsFormPreviewMerging(false)
       }
     }
-  }, [client, cleanupFormPreviewUrls, convertImageBlobToPdfUrl, formPreviewTempUrls, getAuthInstance, id, router])
+  }, [
+    client,
+    formPreviewUrl,
+    hasApprovedRequirementFiles,
+    isFormPreviewMerged,
+    isFormPrintLoading,
+    mergeApprovedRequirementPdfs,
+  ])
 
   const handleCloseFormPreview = useCallback(() => {
     // signal cancellation to any in-flight preview work and abort network requests
@@ -1031,9 +1356,13 @@ function ClientRequirementsContent() {
 
     cleanupFormPreviewUrls([formPreviewUrl, ...formPreviewTempUrls].filter(Boolean) as string[])
     setFormPreviewUrl(null)
+    setFormPreviewHtml(null)
     setFormPreviewTempUrls([])
     setIsFormPreviewModalOpen(false)
     setIsFormPreviewLoading(false)
+    setIsFormPreviewMerging(false)
+    setIsFormPreviewMerged(false)
+    setIsFormPrintLoading(false)
   }, [cleanupFormPreviewUrls, formPreviewTempUrls, formPreviewUrl])
 
   const [unreadRequirements, setUnreadRequirements] = useState<Set<string>>(new Set())
@@ -1244,7 +1573,7 @@ function ClientRequirementsContent() {
     )
   }
 
-  const requirementCount = requirements.length
+  const requirementCount = requirements.length + PAYMENT_REQUIREMENT_ITEMS.length
 
   const currentRequirementIndex =
     selectedDocIndex >= 0 && selectedDocIndex < flatDocuments.length
@@ -1421,6 +1750,31 @@ function ClientRequirementsContent() {
                     )
                   })
                 )}
+                {[
+                  { key: "cedula", label: "Cedula", paid: isCedulaPaid },
+                  { key: "official-receipt", label: "Official Receipt", paid: isOfficialReceiptPaid },
+                ].map((item, paymentIndex) => {
+                  const zeroBasedIndex = requirements.length + paymentIndex
+                  const rowIndex = zeroBasedIndex + 1
+                  return (
+                    <tr key={item.key} className={zeroBasedIndex % 2 === 0 ? "bg-background" : "bg-muted/30"}>
+                      <td className="border border-border p-3 text-center text-muted-foreground align-top">{rowIndex}</td>
+                      <td className="border border-border p-3 text-center">
+                        <span className="font-medium text-foreground">{item.label}</span>
+                      </td>
+                      <td className="border border-border p-3 text-center">
+                        <span
+                          className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                            item.paid ? "bg-green-600 text-white" : "bg-amber-100 text-amber-800"
+                          }`}
+                        >
+                          {item.paid ? "Paid" : "Not Paid"}
+                        </span>
+                      </td>
+                      <td className="border border-border p-3 text-center text-xs text-muted-foreground">Treasury</td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -1705,9 +2059,22 @@ function ClientRequirementsContent() {
                 </div>
               )}
               {!isFormPreviewLoading && formPreviewUrl && (
-                <iframe src={formPreviewUrl} className="w-full h-[82vh] border-0" />
+                <div className="h-full flex flex-col">
+                  <iframe src={formPreviewUrl} className="w-full h-[82vh] border-0" />
+                  {isFormPreviewMerging && (
+                    <div className="px-4 py-2 text-xs text-muted-foreground border-t border-border flex items-center gap-2">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Adding approved requirement files to preview...
+                    </div>
+                  )}
+                </div>
               )}
-              {!isFormPreviewLoading && !formPreviewUrl && (
+              {!isFormPreviewLoading && !formPreviewUrl && formPreviewHtml && (
+                <div className="h-full overflow-auto p-4">
+                  <div className="docx-preview" dangerouslySetInnerHTML={{ __html: formPreviewHtml }} />
+                </div>
+              )}
+              {!isFormPreviewLoading && !formPreviewUrl && !formPreviewHtml && (
                 <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
                   Unable to display application form.
                 </div>
@@ -1719,12 +2086,23 @@ function ClientRequirementsContent() {
                 size="sm"
                 onClick={() => {
                   if (formPreviewUrl) {
-                    handlePrintPdf(formPreviewUrl, client?.applicantName ? `${client.applicantName} Application Form` : "Application Form")
+                    handlePrintApplicationForm()
+                    return
+                  }
+                  if (formPreviewHtml) {
+                    handlePrintHtml(formPreviewHtml, "Application Form Preview")
                   }
                 }}
-                disabled={!formPreviewUrl || isFormPreviewLoading}
+                disabled={(!formPreviewUrl && !formPreviewHtml) || isFormPreviewLoading || isFormPrintLoading}
               >
-                Print
+                {isFormPrintLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Preparing print...
+                  </>
+                ) : (
+                  "Print"
+                )}
               </Button>
               <Button variant="outline" onClick={handleCloseFormPreview}>
                 Close

@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
+import { createHash } from "node:crypto"
 import { adminAuth, adminDb } from "@/lib/firebase-admin"
 import { renderFromTemplateBuffer } from "@/lib/docx/renderFromTemplate"
 import { loadTemplateBuffer } from "@/lib/docx/loadTemplateBuffer"
 import { getRequestPublicOrigin } from "@/lib/http/getRequestPublicOrigin"
 import { mapApplicationToTemplate } from "@/lib/export/mapApplicationToTemplate"
 import { BUSINESS_APPLICATION_PATH } from "@/lib/business-applications"
+import { getRedisClient } from "@/lib/redis"
 import { PDFDocument } from "pdf-lib"
+import {
+  fetchLatestTreasuryAssessmentByClientUid,
+  resolveBusinessClientUid,
+} from "@/lib/treasury-assessment"
 
 export const runtime = "nodejs"
 
@@ -19,6 +25,68 @@ const ExportRequestSchema = z.object({
 })
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+const PREVIEW_CACHE_KEY_PREFIX = "preview:application-form-pdf:v1"
+const DEFAULT_PREVIEW_CACHE_TTL_SECONDS = 10 * 60
+const MAX_PREVIEW_CACHE_TTL_SECONDS = 24 * 60 * 60
+
+function getPreviewCacheTtlSeconds() {
+  const raw = Number.parseInt(process.env.PREVIEW_FORM_CACHE_TTL_SECONDS ?? "", 10)
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return DEFAULT_PREVIEW_CACHE_TTL_SECONDS
+  }
+  return Math.min(raw, MAX_PREVIEW_CACHE_TTL_SECONDS)
+}
+
+function stableSerialize(value: unknown): string {
+  if (value === undefined) return "null"
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value)
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(",")}]`
+  }
+
+  const sortedEntries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))
+  const body = sortedEntries
+    .map(([key, nested]) => `${JSON.stringify(key)}:${stableSerialize(nested)}`)
+    .join(",")
+
+  return `{${body}}`
+}
+
+function buildPreviewCacheKey(
+  applicationId: string,
+  swornOnly: boolean,
+  templateData: unknown
+): string {
+  const cacheVersion = process.env.PREVIEW_FORM_CACHE_VERSION ?? "1"
+  const digest = createHash("sha256")
+    .update(
+      stableSerialize({
+        cacheVersion,
+        applicationId,
+        swornOnly,
+        templateData,
+      })
+    )
+    .digest("hex")
+
+  return `${PREVIEW_CACHE_KEY_PREFIX}:${applicationId}:${swornOnly ? "sworn" : "full"}:${digest}`
+}
+
+function buildPdfResponse(pdfBuffer: Buffer, cacheStatus: "HIT" | "MISS" | "BYPASS") {
+  return new NextResponse(new Uint8Array(pdfBuffer), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="Application.pdf"`,
+      "Content-Length": String(pdfBuffer.length),
+      "Cache-Control": "private, no-store",
+      "X-Preview-Cache": cacheStatus,
+    },
+  })
+}
 
 function toConverterDocxEndpoint(value: string): string {
   const base = value.trim().replace(/\/+$/, "")
@@ -157,10 +225,39 @@ export async function POST(request: NextRequest) {
     const applicationData = snapshot.val()
     const formData = applicationData?.form ?? {}
     const publicOrigin = getRequestPublicOrigin(request)
+    const clientUid = resolveBusinessClientUid(applicationId, applicationData ?? {})
 
-    const templateData = mapApplicationToTemplate(formData)
+    let treasuryAssessment = null
+    try {
+      treasuryAssessment = await fetchLatestTreasuryAssessmentByClientUid(adminDb, [clientUid, applicationId])
+    } catch (treasuryError) {
+      console.warn("Failed to load treasury assessment for DOCX->PDF export", treasuryError)
+    }
 
-    let templatePath = "templates/2025_new_business_form_template_with_tags_v2.docx"
+    const templateData = mapApplicationToTemplate(formData, treasuryAssessment)
+    const previewCacheKey = buildPreviewCacheKey(applicationId, swornOnly, templateData)
+    let redisClient = null as Awaited<ReturnType<typeof getRedisClient>> | null
+    try {
+      redisClient = await getRedisClient()
+    } catch (redisError) {
+      console.warn("Failed to initialize Redis preview cache. Continuing without cache.", redisError)
+    }
+
+    if (redisClient) {
+      try {
+        const cachedBase64 = await redisClient.get(previewCacheKey)
+        if (cachedBase64) {
+          const cachedBuffer = Buffer.from(cachedBase64, "base64")
+          if (cachedBuffer.length > 0) {
+            return buildPdfResponse(cachedBuffer, "HIT")
+          }
+        }
+      } catch (err) {
+        console.warn("Redis preview cache read failed. Falling back to fresh render.", err)
+      }
+    }
+
+    let templatePath = "templates/2025_new_business_form_template_with_tags_v2_fixed.docx"
     try {
       const appType = String(formData.applicationType ?? "").toLowerCase()
       if (swornOnly) {
@@ -178,7 +275,7 @@ export async function POST(request: NextRequest) {
       docxBuffer = renderFromTemplateBuffer(mainTemplateBuffer, templateData)
     } catch (err) {
       return NextResponse.json(
-        { error: "Template file not found on server", details: String(err) },
+        { error: "Failed to render application template", details: String(err) },
         { status: 500 }
       )
     }
@@ -246,14 +343,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to convert to PDF", details: errStr }, { status: 500 })
     }
 
-    return new NextResponse(new Uint8Array(pdfBuffer), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="Application.pdf"`,
-        "Content-Length": String(pdfBuffer.length),
-      },
-    })
+    if (redisClient) {
+      try {
+        await redisClient.set(previewCacheKey, pdfBuffer.toString("base64"), {
+          EX: getPreviewCacheTtlSeconds(),
+        })
+      } catch (err) {
+        console.warn("Redis preview cache write failed. Continuing without cache.", err)
+      }
+    }
+
+    return buildPdfResponse(pdfBuffer, redisClient ? "MISS" : "BYPASS")
   } catch (error) {
     console.error("DOCX->PDF export error:", error)
     return NextResponse.json({ error: "Failed to generate PDF" }, { status: 500 })

@@ -2,6 +2,10 @@
  * Maps Firestore business application data to template tags for DOCX generation.
  * This is the "contract layer" between database fields and template placeholders.
  */
+import {
+  buildTemplateTreasuryFields,
+  type TreasuryAssessmentRecord,
+} from "@/lib/treasury-assessment"
 
 export type Activity = {
   lineOfBusiness: string
@@ -90,6 +94,31 @@ export type TemplateData = {
 
   // Activities (line of business) - loop
   activities: Activity[]
+
+  // Treasury assessment values (optional; used when treasury already assessed fees)
+  treasuryCedulaNo?: string
+  treasuryCedulaIssuedAt?: string | number
+  treasuryOrNo?: string
+  treasuryOrIssuedAt?: string | number
+  treasuryOthers?: string
+  others?: string
+  otherFees?: string
+  otherFeeNames?: string
+  others_amount?: string | number
+  others_penalty?: string | number
+  others_total?: string | number
+  other_amount?: string | number
+  other_penalty?: string | number
+  other_total?: string | number
+  treasury_others_amount?: string | number
+  treasury_others_penalty?: string | number
+  treasury_others_total?: string | number
+  grand_total?: string | number
+  lgu_total?: string | number
+  treasuryGrandTotal?: string | number
+  treasuryLguTotal?: string | number
+
+  [key: string]: unknown
 }
 
 const CHECKED = "☑"
@@ -207,7 +236,10 @@ function convertAmountToWords(input?: string | number): string {
 /**
  * Map Firestore application data to template data model
  */
-export function mapApplicationToTemplate(form: Record<string, unknown>): TemplateData {
+export function mapApplicationToTemplate(
+  form: Record<string, unknown>,
+  treasuryAssessment?: TreasuryAssessmentRecord | null
+): TemplateData {
   const applicationType = String(form.applicationType ?? "").toLowerCase()
   const businessType = String(form.businessType ?? "").toLowerCase()
   const taxIncentive = String(form.taxIncentive ?? "").toLowerCase()
@@ -250,6 +282,7 @@ export function mapApplicationToTemplate(form: Record<string, unknown>): Templat
     const value = parseFloat(String(activity.grossSales ?? activity.grossSalesReceipts ?? 0).replace(/,/g, ""))
     return sum + (Number.isNaN(value) ? 0 : value)
   }, 0)
+  const treasuryTemplateFields = buildTemplateTreasuryFields(treasuryAssessment)
 
   return {
     // Application type checkboxes
@@ -331,5 +364,8 @@ export function mapApplicationToTemplate(form: Record<string, unknown>): Templat
 
     // Activities
     activities,
+
+    // Treasury assessment (if available)
+    ...treasuryTemplateFields,
   }
 }

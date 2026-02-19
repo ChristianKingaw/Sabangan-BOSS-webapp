@@ -80,6 +80,8 @@ NEXT_PUBLIC_FIREBASE_APP_ID=...
 NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=...
 NEXT_PUBLIC_FIREBASE_DATABASE_URL=https://<your-db>.firebasedatabase.app
 CONVERTER_SERVICE_URL=https://converter-<hash>.asia-southeast1.run.app/convert/docx-to-pdf
+REDIS_URL=redis://<user>:<password>@<host>:6379
+PREVIEW_FORM_CACHE_TTL_SECONDS=600
 ```
 
 ### `.env` (used by Firebase frameworks deploy)

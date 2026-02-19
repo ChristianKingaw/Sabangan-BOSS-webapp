@@ -1,0 +1,351 @@
+{
+  "-Ok7Ptg4I8b9lvwpdAEN": {
+    "additional_fees": [
+      {
+        "amount": 100,
+        "name": "Tourism Fee",
+        "total": 100
+      }
+    ],
+    "cedula_issued_at": 1771397064887,
+    "cedula_no": "123456",
+    "client_uid": "-Ok7Ptg4I8b9lvwpdAEN",
+    "createdAt": 1771379191139,
+    "fees": {
+      "building_inspection_fee": {
+        "total": 0
+      },
+      "combustible_storage_sale_fee": {
+        "total": 0
+      },
+      "combustible_storage_tax": {
+        "amount": 123,
+        "total": 123
+      },
+      "delivery_permit_fee": {
+        "total": 0
+      },
+      "delivery_vehicles_tax": {
+        "amount": 1223813,
+        "total": 1223813
+      },
+      "dst_fee": {
+        "total": 0
+      },
+      "electrical_inspection_fee": {
+        "total": 0
+      },
+      "fire_safety_inspection_fee": {
+        "total": 0
+      },
+      "garbage_charges": {
+        "total": 0
+      },
+      "gross_sales_tax": {
+        "amount": 1000,
+        "total": 1000
+      },
+      "mayors_clearance_fee": {
+        "amount": 123,
+        "total": 123
+      },
+      "mayors_permit_fee": {
+        "amount": 123,
+        "total": 123
+      },
+      "mechanical_inspection_fee": {
+        "total": 0
+      },
+      "sanitary_inspection_fee": {
+        "total": 0
+      },
+      "signboard_billboard_tax": {
+        "amount": 123,
+        "total": 123
+      },
+      "signboard_business_plate_fee": {
+        "total": 0
+      }
+    },
+    "grand_total": 1225405,
+    "lgu_total": 1225405,
+    "or_issued_at": 1771397064887,
+    "or_no": "123456",
+    "staff_email": "test@gmail.com",
+    "staff_uid": "mys089y6WefjN8sGcwm9R8wOUC83",
+    "uid": "-Ok7Ptg4I8b9lvwpdAEN",
+    "updatedAt": 1771397064887
+  },
+  "-Olj2B_DF7fphm5ZeM3m": {
+    "additional_fees": [
+      {
+        "amount": 1200,
+        "name": "Community Tax",
+        "total": 1200
+      },
+      {
+        "amount": 11,
+        "name": "Additional Fee",
+        "total": 11
+      }
+    ],
+    "cedula_issued_at": 1771389635254,
+    "cedula_no": "12726261",
+    "client_uid": "-Ok7aQtsrepLTbgQ7kAv",
+    "createdAt": 1771389635254,
+    "fees": {
+      "building_inspection_fee": {
+        "total": 0
+      },
+      "combustible_storage_sale_fee": {
+        "total": 0
+      },
+      "combustible_storage_tax": {
+        "total": 0
+      },
+      "delivery_permit_fee": {
+        "total": 0
+      },
+      "delivery_vehicles_tax": {
+        "total": 0
+      },
+      "dst_fee": {
+        "total": 0
+      },
+      "electrical_inspection_fee": {
+        "total": 0
+      },
+      "fire_safety_inspection_fee": {
+        "total": 0
+      },
+      "garbage_charges": {
+        "total": 0
+      },
+      "gross_sales_tax": {
+        "amount": 100,
+        "total": 100
+      },
+      "mayors_clearance_fee": {
+        "total": 0
+      },
+      "mayors_permit_fee": {
+        "total": 0
+      },
+      "mechanical_inspection_fee": {
+        "total": 0
+      },
+      "sanitary_inspection_fee": {
+        "total": 0
+      },
+      "signboard_billboard_tax": {
+        "total": 0
+      },
+      "signboard_business_plate_fee": {
+        "total": 0
+      }
+    },
+    "grand_total": 1311,
+    "lgu_total": 1311,
+    "or_issued_at": 1771389635254,
+    "or_no": "1262626",
+    "staff_email": "test@gmail.com",
+    "staff_uid": "mys089y6WefjN8sGcwm9R8wOUC83",
+    "uid": "-Olj2B_DF7fphm5ZeM3m",
+    "updatedAt": 1771389975143
+  },
+  "-OljSEXvL2cWZv0DALDs": {
+    "cedula_issued_at": 1771396463423,
+    "cedula_no": "123456",
+    "client_uid": "vFFN4wHnYKOVY28N6Xxe1IDXTnH3",
+    "createdAt": 1771396463423,
+    "fees": {
+      "building_inspection_fee": {
+        "total": 0
+      },
+      "combustible_storage_sale_fee": {
+        "total": 0
+      },
+      "combustible_storage_tax": {
+        "total": 0
+      },
+      "delivery_permit_fee": {
+        "total": 0
+      },
+      "delivery_vehicles_tax": {
+        "total": 0
+      },
+      "dst_fee": {
+        "total": 0
+      },
+      "electrical_inspection_fee": {
+        "total": 0
+      },
+      "fire_safety_inspection_fee": {
+        "total": 0
+      },
+      "garbage_charges": {
+        "total": 0
+      },
+      "gross_sales_tax": {
+        "amount": 1200,
+        "penalty": 141231223,
+        "total": 141232423
+      },
+      "mayors_clearance_fee": {
+        "total": 0
+      },
+      "mayors_permit_fee": {
+        "total": 0
+      },
+      "mechanical_inspection_fee": {
+        "total": 0
+      },
+      "sanitary_inspection_fee": {
+        "total": 0
+      },
+      "signboard_billboard_tax": {
+        "total": 0
+      },
+      "signboard_business_plate_fee": {
+        "total": 0
+      }
+    },
+    "grand_total": 141232423,
+    "lgu_total": 141232423,
+    "or_issued_at": 1771396463423,
+    "or_no": "123456",
+    "staff_email": "test@gmail.com",
+    "staff_uid": "mys089y6WefjN8sGcwm9R8wOUC83",
+    "uid": "-OljSEXvL2cWZv0DALDs",
+    "updatedAt": 1771397381541
+  },
+  "-OljTGNzmLOObavREXIY": {
+    "cedula_no": "",
+    "client_uid": "jGu2EDht37bjwqmp7AFNpgBBINg2",
+    "createdAt": 1771396733146,
+    "fees": {
+      "building_inspection_fee": {
+        "total": 0
+      },
+      "combustible_storage_sale_fee": {
+        "total": 0
+      },
+      "combustible_storage_tax": {
+        "total": 0
+      },
+      "delivery_permit_fee": {
+        "total": 0
+      },
+      "delivery_vehicles_tax": {
+        "total": 0
+      },
+      "dst_fee": {
+        "total": 0
+      },
+      "electrical_inspection_fee": {
+        "total": 0
+      },
+      "fire_safety_inspection_fee": {
+        "total": 0
+      },
+      "garbage_charges": {
+        "total": 0
+      },
+      "gross_sales_tax": {
+        "amount": 123,
+        "total": 123
+      },
+      "mayors_clearance_fee": {
+        "total": 0
+      },
+      "mayors_permit_fee": {
+        "total": 0
+      },
+      "mechanical_inspection_fee": {
+        "total": 0
+      },
+      "sanitary_inspection_fee": {
+        "total": 0
+      },
+      "signboard_billboard_tax": {
+        "total": 0
+      },
+      "signboard_business_plate_fee": {
+        "total": 0
+      }
+    },
+    "grand_total": 123,
+    "lgu_total": 123,
+    "or_no": "",
+    "staff_email": "test@gmail.com",
+    "staff_uid": "mys089y6WefjN8sGcwm9R8wOUC83",
+    "uid": "-OljTGNzmLOObavREXIY",
+    "updatedAt": 1771396733146
+  },
+  "-OljTMA3LnDkXGXf_g64": {
+    "cedula_issued_at": 1771397235419,
+    "cedula_no": "1234120",
+    "client_uid": "LSAb7V2gZTRgYBxryOFnwDakB5n1",
+    "createdAt": 1771396756831,
+    "fees": {
+      "building_inspection_fee": {
+        "total": 0
+      },
+      "combustible_storage_sale_fee": {
+        "total": 0
+      },
+      "combustible_storage_tax": {
+        "amount": 234234,
+        "total": 234234
+      },
+      "delivery_permit_fee": {
+        "total": 0
+      },
+      "delivery_vehicles_tax": {
+        "total": 0
+      },
+      "dst_fee": {
+        "total": 0
+      },
+      "electrical_inspection_fee": {
+        "total": 0
+      },
+      "fire_safety_inspection_fee": {
+        "total": 0
+      },
+      "garbage_charges": {
+        "total": 0
+      },
+      "gross_sales_tax": {
+        "total": 0
+      },
+      "mayors_clearance_fee": {
+        "total": 0
+      },
+      "mayors_permit_fee": {
+        "total": 0
+      },
+      "mechanical_inspection_fee": {
+        "total": 0
+      },
+      "sanitary_inspection_fee": {
+        "total": 0
+      },
+      "signboard_billboard_tax": {
+        "amount": 234324,
+        "total": 234324
+      },
+      "signboard_business_plate_fee": {
+        "total": 0
+      }
+    },
+    "grand_total": 468558,
+    "lgu_total": 468558,
+    "or_issued_at": 1771396756831,
+    "or_no": "123123121211",
+    "staff_email": "test@gmail.com",
+    "staff_uid": "mys089y6WefjN8sGcwm9R8wOUC83",
+    "uid": "-OljTMA3LnDkXGXf_g64",
+    "updatedAt": 1771397235419
+  }
+}
