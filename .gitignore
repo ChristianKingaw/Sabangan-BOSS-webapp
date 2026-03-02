@@ -50,8 +50,5 @@ sa-inline.json
 
 
 
-/database/data/data.json
-/database/data/sabangan-app-firebase-adminsdk-fbsvc-41c0a5b8e1.json
-/database/data/treasury-fees-backup-2026-02-18T07-30-16-102Z.json
-/database/data/treasury-fees-backup-2026-02-18T07-32-31-209Z.json
+/database/data/treasury-fees-backup-*.json
 .gitignore
