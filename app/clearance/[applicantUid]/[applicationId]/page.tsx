@@ -17,7 +17,7 @@ import {
   type ClearanceApplicationRecord,
 } from "@/lib/clearance-applications"
 import { renderAsync } from "docx-preview"
-import { handlePrintHtml } from "@/lib/print"
+import { handlePrintHtml, handlePrintPdf } from "@/lib/print"
 
 // Helper to sanitize keys for Firebase RTDB paths
 const sanitizeKey = (key: string) => key.replace(/[.#$\/\[\]]/g, "_")
@@ -75,6 +75,7 @@ function ClearanceRequirementsContent() {
   const [isDocxModalOpen, setIsDocxModalOpen] = useState(false)
   const [isDocxLoading, setIsDocxLoading] = useState(false)
   const [docxContent, setDocxContent] = useState<string | null>(null)
+  const [isClearancePrintLoading, setIsClearancePrintLoading] = useState(false)
   const docxPreviewCancelRef = useRef(false)
 
   const previousFilesRef = useRef<
@@ -460,6 +461,52 @@ function ClearanceRequirementsContent() {
     setIsDocxLoading(false)
   }
 
+  const handlePrintClearance = useCallback(async () => {
+    if (!application) return
+
+    const currentUser = firebaseAuth?.currentUser
+    if (!currentUser) {
+      toast.error("You must be logged in to print this document.")
+      router.replace("/")
+      return
+    }
+
+    try {
+      setIsClearancePrintLoading(true)
+      const idToken = await currentUser.getIdToken()
+      const response = await fetch("/api/export/clearance-pdf", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          applicantUid,
+          applicationId: application.id,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        console.error("Failed to generate Mayor's Clearance PDF for print:", errorData)
+        toast.error("Unable to prepare exact-print PDF right now.")
+        return
+      }
+
+      const blob = await response.blob()
+      const pdfUrl = URL.createObjectURL(blob)
+      handlePrintPdf(pdfUrl, `${application.applicantName} - Mayor's Clearance`)
+      setTimeout(() => {
+        try { URL.revokeObjectURL(pdfUrl) } catch {}
+      }, 30_000)
+    } catch (error) {
+      console.error("Error printing Mayor's Clearance:", error)
+      toast.error("Unable to print Mayor's Clearance right now.")
+    } finally {
+      setIsClearancePrintLoading(false)
+    }
+  }, [applicantUid, application, router])
+
   if (isLoading || !isAuthReady) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -522,6 +569,16 @@ function ClearanceRequirementsContent() {
                 })()}
               </span>
             )}
+            <Button variant="outline" onClick={handlePrintClearance} disabled={isClearancePrintLoading}>
+              {isClearancePrintLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Preparing print...
+                </>
+              ) : (
+                "Print Mayor's Clearance"
+              )}
+            </Button>
           </div>
         </div>
 

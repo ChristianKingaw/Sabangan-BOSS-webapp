@@ -1,4 +1,5 @@
 import { initializeApp, getApp, getApps, type FirebaseApp } from "firebase/app"
+import { getAnalytics, isSupported, type Analytics } from "firebase/analytics"
 import { getFirestore } from "firebase/firestore"
 import { getDatabase } from "firebase/database"
 import { getAuth, initializeAuth, browserLocalPersistence, type Auth } from "firebase/auth"
@@ -44,3 +45,10 @@ if (typeof window !== "undefined") {
 export const auth = firebaseAuth
 export const db = getFirestore(app)
 export const realtimeDb = getDatabase(app)
+
+export const analyticsPromise: Promise<Analytics | null> =
+  typeof window === "undefined"
+    ? Promise.resolve(null)
+    : isSupported()
+        .then((supported) => (supported ? getAnalytics(app) : null))
+        .catch(() => null)

@@ -25,8 +25,11 @@ export function handlePrintHtml(html: string | null, title = "Document", extraHt
             @page { size: auto; margin: 10mm; }
             html, body { height: auto; -webkit-print-color-adjust: exact; color-adjust: exact; }
             body { margin: 0; padding: 0; background: white; font-family: Arial, sans-serif; }
-            .docx-preview { box-shadow: none !important; background: white !important; }
-            .docx-preview * { page-break-inside: avoid; }
+            .docx-preview, .docx-wrapper { box-shadow: none !important; background: white !important; }
+            .docx-wrapper { padding: 0 !important; margin: 0 auto !important; }
+            /* Preserve docx-preview page boundaries when printing multi-page templates. */
+            section.docx { break-after: page; page-break-after: always; }
+            section.docx:last-of-type { break-after: auto; page-break-after: auto; }
           </style>
         </head>
         <body>

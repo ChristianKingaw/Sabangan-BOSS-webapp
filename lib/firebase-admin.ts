@@ -1,4 +1,4 @@
-import { existsSync, statSync, readFileSync } from "fs"
+import { existsSync, readdirSync, statSync, readFileSync } from "fs"
 import admin from "firebase-admin"
 import path from "path"
 
@@ -68,11 +68,9 @@ function getFirebaseAdminApp(): admin.app.App {
       ? undefined
       : process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_PATH ?? process.env.GOOGLE_APPLICATION_CREDENTIALS
 
-    const candidatePaths = [
-      envServiceAccountPathCandidate,
-      path.resolve(process.cwd(), "database/data/sabangan-app-firebase-adminsdk-fbsvc-9d9378f051.json"),
-      path.resolve(__dirname, "..", "database/data/sabangan-app-firebase-adminsdk-fbsvc-9d9378f051.json"),
-    ].filter(Boolean) as string[]
+    const candidatePaths = [envServiceAccountPathCandidate, ...findServiceAccountFallbackPaths()].filter(
+      Boolean
+    ) as string[]
     const serviceAccountPath = candidatePaths.find((p) => {
       try {
         return existsSync(p) && statSync(p).isFile()
@@ -109,11 +107,7 @@ function getFirebaseAdminApp(): admin.app.App {
   if (!credential) {
     const envServiceAccountPathCandidate =
       process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_PATH ?? process.env.GOOGLE_APPLICATION_CREDENTIALS
-    const checked = [
-      envServiceAccountPathCandidate,
-      path.resolve(process.cwd(), "database/data/sabangan-app-firebase-adminsdk-fbsvc-9d9378f051.json"),
-      path.resolve(__dirname, "..", "database/data/sabangan-app-firebase-adminsdk-fbsvc-9d9378f051.json"),
-    ]
+    const checked = [envServiceAccountPathCandidate, ...findServiceAccountFallbackPaths()]
       .filter(Boolean)
       .join(", ")
 
@@ -156,4 +150,28 @@ function statSafeIsFile(p: string) {
   } catch {
     return false
   }
+}
+
+function findServiceAccountFallbackPaths() {
+  const filenamePattern = /^sabangan-app-firebase-adminsdk-fbsvc-[a-z0-9]+\.json$/i
+  const candidateDirs = [
+    path.resolve(process.cwd(), "database/data"),
+    path.resolve(__dirname, "..", "database/data"),
+  ]
+
+  const discovered: string[] = []
+  for (const dir of candidateDirs) {
+    try {
+      const files = readdirSync(dir, { withFileTypes: true })
+      for (const file of files) {
+        if (file.isFile() && filenamePattern.test(file.name)) {
+          discovered.push(path.resolve(dir, file.name))
+        }
+      }
+    } catch {
+      // ignore missing/unreadable directories
+    }
+  }
+
+  return Array.from(new Set(discovered))
 }

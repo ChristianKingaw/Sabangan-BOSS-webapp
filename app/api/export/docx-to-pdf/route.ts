@@ -115,7 +115,8 @@ function getConverterEndpoints(requestOrigin: string): string[] {
 
   // Production path via Firebase Hosting rewrite -> Cloud Run converter service.
   candidates.push(toConverterDocxEndpoint(`${requestOrigin}/api/convert`))
-  // Local Docker container fallback.
+  // Local converter fallbacks (Windows setups often expose localhost but not 127.0.0.1).
+  candidates.push("http://localhost:8080/convert/docx-to-pdf")
   candidates.push("http://127.0.0.1:8080/convert/docx-to-pdf")
 
   return [...new Set(candidates)]

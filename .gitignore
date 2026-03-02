@@ -38,3 +38,12 @@ tsconfig.tsbuildinfo
 
 # local secrets
 sa-inline.json
+
+# firebase admin sdk service account keys (any location)
+*firebase-adminsdk*.json
+
+# mayor's clearance templates (do not commit generated/edited copies)
+/templates/mayors_clearance*.docx
+/templates/mayors_clearance*.xlsx
+/templates/*Mayor*Clearance*.docx
+/templates/*Mayor*Clearance*.xlsx

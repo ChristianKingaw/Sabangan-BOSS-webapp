@@ -84,6 +84,68 @@ const RECENT_NOTIFICATION_DAYS = 2
 const MAX_NOTIFICATIONS_PER_GROUP = 6
 const REQUIREMENT_UPDATE_THRESHOLD_MS = 6 * 60 * 60 * 1000
 
+const toSortableTimestamp = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (value instanceof Date) {
+    const time = value.getTime()
+    return Number.isNaN(time) ? undefined : time
+  }
+  if (typeof value === "string" && value.trim()) {
+    return parseDateToTimestamp(value.trim())
+  }
+  return undefined
+}
+
+const getLatestApprovedFileTimestamp = (requirements: BusinessRequirement[] | undefined): number | undefined => {
+  if (!Array.isArray(requirements) || requirements.length === 0) return undefined
+  let latest: number | undefined
+  requirements.forEach((requirement) => {
+    requirement.files.forEach((file) => {
+      const status = String(file.status ?? "").toLowerCase()
+      if (!status.includes("approve")) return
+      if (typeof file.uploadedAt !== "number" || !Number.isFinite(file.uploadedAt)) return
+      if (!latest || file.uploadedAt > latest) latest = file.uploadedAt
+    })
+  })
+  return latest
+}
+
+const getClearanceApplicationDateTimestamp = (record: ClearanceApplicationRecord): number | undefined =>
+  toSortableTimestamp(record.applicationDate) ??
+  toSortableTimestamp(record.form?.dateOfApplication) ??
+  toSortableTimestamp(record.form?.applicationDate) ??
+  toSortableTimestamp(record.form?.date) ??
+  toSortableTimestamp(record.submittedAt)
+
+const getClearanceApprovedTimestamp = (record: ClearanceApplicationRecord): number | undefined => {
+  const form = record.form ?? {}
+  return (
+    toSortableTimestamp(form.approvedAt) ??
+    toSortableTimestamp(form.approvedDate) ??
+    toSortableTimestamp(form.dateApproved) ??
+    toSortableTimestamp(form.dateOfApproval) ??
+    toSortableTimestamp((record as any)?.approvedAt) ??
+    toSortableTimestamp((record as any)?.approvedDate) ??
+    getLatestApprovedFileTimestamp(record.requirements) ??
+    toSortableTimestamp(record.submittedAt) ??
+    toSortableTimestamp(record.applicationDate)
+  )
+}
+
+const getBusinessApprovedTimestamp = (record: BusinessApplicationRecord): number | undefined => {
+  const form = record.form ?? {}
+  return (
+    toSortableTimestamp(record.approvedAt) ??
+    toSortableTimestamp((record as any)?.approvedDate) ??
+    toSortableTimestamp(form.approvedAt) ??
+    toSortableTimestamp(form.approvedDate) ??
+    toSortableTimestamp(form.dateApproved) ??
+    toSortableTimestamp(form.dateOfApproval) ??
+    toSortableTimestamp(record.submittedAt) ??
+    toSortableTimestamp(record.applicationDate)
+  )
+}
+
 const getClientMessageTimestamps = (payload: any): number[] => {
   const chatNode = (payload as any)?.chat ?? null
   const appChats: number[] = chatNode
@@ -597,6 +659,8 @@ export default function HomePage() {
   const [clearanceApplicantsError, setClearanceApplicantsError] = useState<string | null>(null)
   const [clearanceApplicantsSearch, setClearanceApplicantsSearch] = useState("")
   const [clearanceApplicantsStatus, setClearanceApplicantsStatus] = useState<ClearanceStatusFilter>("All")
+  const [printingClearanceApplicationId, setPrintingClearanceApplicationId] = useState<string | null>(null)
+  const [downloadingClearanceApplicationId, setDownloadingClearanceApplicationId] = useState<string | null>(null)
   const [clearanceApplicationDateFilter, setClearanceApplicationDateFilter] = useState<Date | undefined>(undefined)
   const [clearanceRecordRange, setClearanceRecordRange] = useState<"monthly" | "yearly">("yearly")
   const [clearanceRecordMonth, setClearanceRecordMonth] = useState<number | null>(null)
@@ -782,12 +846,13 @@ export default function HomePage() {
       const composedName = [nameParts.firstName, nameParts.middleName, nameParts.lastName].filter(Boolean).join(" ")
       const phone =
         (form.phone ?? form.mobile ?? form.contactNumber ?? form.phoneNumber ?? "").toString().trim()
+      const approvedDate = getClearanceApprovedTimestamp(record)
       return {
         id: `clearance-${record.id}`,
         fullName: composedName || record.applicantName || "",
         address: formatClearanceAddress(form),
         phone,
-        date: record.applicationDate ?? record.submittedAt ?? null,
+        date: approvedDate ?? null,
       }
     })
 
@@ -797,18 +862,13 @@ export default function HomePage() {
       const composedName = [nameParts.firstName, nameParts.middleName, nameParts.lastName].filter(Boolean).join(" ")
       const phone =
         (form.businessMobile ?? form.ownerMobile ?? form.mobile ?? form.phone ?? "").toString().trim()
+      const approvedDate = getBusinessApprovedTimestamp(client)
       return {
         id: `business-${client.id}`,
         fullName: composedName || client.applicantName || "",
         address: formatClearanceAddress(form),
         phone,
-        date:
-          form.dateOfApplication ??
-          form.registrationDate ??
-          client.applicationDate ??
-          client.approvedAt ??
-          client.submittedAt ??
-          null,
+        date: approvedDate ?? null,
       }
     })
 
@@ -819,7 +879,7 @@ export default function HomePage() {
     const years = new Set<number>()
     clearanceRecords.forEach((record) => {
       if (!record.date) return
-      const date = new Date(record.date as string)
+      const date = new Date(record.date)
       if (Number.isNaN(date.getTime())) return
       years.add(date.getFullYear())
     })
@@ -845,27 +905,33 @@ export default function HomePage() {
   const filteredClearanceRecords = useMemo(() => {
     const normalizedSearch = clearanceRecordSearch.trim().toLowerCase()
 
-    return clearanceRecords.filter((record) => {
-      if (!record.date) return false
-      const date = new Date(record.date as string)
-      if (Number.isNaN(date.getTime())) return false
+    return clearanceRecords
+      .filter((record) => {
+        if (!record.date) return false
+        const date = new Date(record.date)
+        if (Number.isNaN(date.getTime())) return false
 
-      const matchesYear = !clearanceRecordYear || date.getFullYear() === clearanceRecordYear
-      const matchesMonth =
-        clearanceRecordRange !== "monthly" ||
-        clearanceRecordMonth === null ||
-        date.getMonth() === clearanceRecordMonth
+        const matchesYear = !clearanceRecordYear || date.getFullYear() === clearanceRecordYear
+        const matchesMonth =
+          clearanceRecordRange !== "monthly" ||
+          clearanceRecordMonth === null ||
+          date.getMonth() === clearanceRecordMonth
 
-      let matchesSearch = true
-      if (normalizedSearch) {
-        const haystack = [record.fullName, record.address, record.phone]
-          .filter(Boolean)
-          .map((value) => value.toLowerCase())
-        matchesSearch = haystack.some((value) => value.includes(normalizedSearch))
-      }
+        let matchesSearch = true
+        if (normalizedSearch) {
+          const haystack = [record.fullName, record.address, record.phone]
+            .filter(Boolean)
+            .map((value) => value.toLowerCase())
+          matchesSearch = haystack.some((value) => value.includes(normalizedSearch))
+        }
 
-      return matchesYear && matchesMonth && matchesSearch
-    })
+        return matchesYear && matchesMonth && matchesSearch
+      })
+      .sort((a, b) => {
+        const aTs = toSortableTimestamp(a.date) ?? Number.MAX_SAFE_INTEGER
+        const bTs = toSortableTimestamp(b.date) ?? Number.MAX_SAFE_INTEGER
+        return aTs - bTs
+      })
   }, [
     clearanceRecords,
     clearanceRecordYear,
@@ -1012,6 +1078,134 @@ export default function HomePage() {
     setBarangayImageLoading(true)
     setBarangayLoadingFiles(new Set(built.documents.map((doc) => doc.file.id)))
   }
+
+  const handlePrintClearanceApplication = useCallback(
+    async (record: ClearanceApplicationRecord, event?: React.MouseEvent) => {
+      event?.stopPropagation()
+
+      const isBusinessRecord = record.id.startsWith("business-")
+      if (!isBusinessRecord && !record.applicantUid) {
+        toast.error("Missing applicant information for this record.")
+        return
+      }
+
+      try {
+        const auth = getAuthInstance()
+        const currentUser = auth?.currentUser
+        if (!currentUser) {
+          toast.error("You must be logged in to print.")
+          return
+        }
+
+        setPrintingClearanceApplicationId(record.id)
+        const idToken = await currentUser.getIdToken()
+
+        const response = await fetch("/api/export/clearance-pdf", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify(
+            isBusinessRecord
+              ? { businessApplicationId: record.id.slice("business-".length) }
+              : {
+                  applicantUid: record.applicantUid,
+                  applicationId: record.id,
+                }
+          ),
+        })
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}))
+          console.error("Failed to generate PDF for printing:", errData)
+          toast.error("Unable to prepare exact-print PDF right now.")
+          return
+        }
+
+        const blob = await response.blob()
+        const pdfUrl = URL.createObjectURL(blob)
+        handlePrintPdf(pdfUrl, `${record.applicantName} - Mayor's Clearance`)
+        setTimeout(() => {
+          try { URL.revokeObjectURL(pdfUrl) } catch {}
+        }, 30_000)
+      } catch (error) {
+        console.error("Error printing record:", error)
+        toast.error("Unable to print this record right now.")
+      } finally {
+        setPrintingClearanceApplicationId((prev) => (prev === record.id ? null : prev))
+      }
+    },
+    [getAuthInstance]
+  )
+
+  const handleDownloadClearanceApplication = useCallback(
+    async (record: ClearanceApplicationRecord, event?: React.MouseEvent) => {
+      event?.stopPropagation()
+
+      const isBusinessRecord = record.id.startsWith("business-")
+      if (!isBusinessRecord && !record.applicantUid) {
+        toast.error("Missing applicant information for this record.")
+        return
+      }
+
+      try {
+        const auth = getAuthInstance()
+        const currentUser = auth?.currentUser
+        if (!currentUser) {
+          toast.error("You must be logged in to download.")
+          return
+        }
+
+        setDownloadingClearanceApplicationId(record.id)
+        const idToken = await currentUser.getIdToken()
+
+        const response = await fetch("/api/export/clearance-pdf", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify(
+            isBusinessRecord
+              ? { businessApplicationId: record.id.slice("business-".length) }
+              : {
+                  applicantUid: record.applicantUid,
+                  applicationId: record.id,
+                }
+          ),
+        })
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}))
+          console.error("Failed to generate PDF for download:", errData)
+          toast.error("Unable to prepare PDF download right now.")
+          return
+        }
+
+        const blob = await response.blob()
+        const fileUrl = URL.createObjectURL(blob)
+        const anchor = document.createElement("a")
+        anchor.href = fileUrl
+        anchor.download = `${record.applicantName || "Applicant"}_Mayors_Clearance.pdf`
+          .replace(/[^\w.\-]+/g, "_")
+          .replace(/_+/g, "_")
+        document.body.appendChild(anchor)
+        anchor.click()
+        anchor.remove()
+        setTimeout(() => {
+          try { URL.revokeObjectURL(fileUrl) } catch {}
+        }, 5_000)
+      } catch (error) {
+        console.error("Error downloading Mayor's Clearance:", error)
+        toast.error("Unable to download this record right now.")
+      } finally {
+        setDownloadingClearanceApplicationId((prev) => (prev === record.id ? null : prev))
+      }
+    },
+    [getAuthInstance]
+  )
+
 
   const handleBarangayApprove = async () => {
     if (!barangayPreview) return
@@ -2341,6 +2535,53 @@ export default function HomePage() {
     return raw ? String(raw).trim() : ""
   }
 
+  function getClearanceTownProvince(form: Record<string, any> | undefined) {
+    const toCleanString = (value: unknown) => String(value ?? "").trim()
+    const address = form?.address && typeof form.address === "object"
+      ? (form.address as Record<string, unknown>)
+      : undefined
+
+    const town =
+      toCleanString(address?.town) ||
+      toCleanString(address?.municipality) ||
+      toCleanString(address?.city) ||
+      toCleanString(form?.town) ||
+      toCleanString(form?.municipality) ||
+      toCleanString(form?.city)
+
+    const explicitProvince =
+      toCleanString(address?.province) ||
+      toCleanString(form?.province)
+
+    const province =
+      explicitProvince || (/sabangan/i.test(town) ? "Mountain Province" : "")
+
+    if (town || province) {
+      return [town, province].filter(Boolean).join(", ")
+    }
+
+    const rawAddress =
+      toCleanString(form?.businessAddress) ||
+      toCleanString(form?.ownerAddress) ||
+      toCleanString(form?.address)
+
+    if (rawAddress) {
+      const parts = rawAddress
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean)
+
+      if (parts.length >= 2) {
+        return `${parts[parts.length - 2]}, ${parts[parts.length - 1]}`
+      }
+      if (parts.length === 1) {
+        return parts[0]
+      }
+    }
+
+    return "Sabangan, Mountain Province"
+  }
+
   const fetchClearanceTemplate = async () => {
     const response = await fetch("/api/export/clearance-template", { cache: "no-cache" })
     if (!response.ok) {
@@ -2440,7 +2681,7 @@ export default function HomePage() {
         middleInitial,
         lastName,
         barangay,
-        "Sabangan, Mountain Province",
+        getClearanceTownProvince(form),
         cedulaNo,
         placeOfIssuance,
         cedulaIssuedDate,
@@ -2484,7 +2725,7 @@ export default function HomePage() {
         middleInitial,
         lastName,
         barangay,
-        "Sabangan, Mountain Province",
+        getClearanceTownProvince(form),
         cedulaNo,
         placeOfIssuance,
         cedulaIssuedDate,
@@ -2640,7 +2881,9 @@ export default function HomePage() {
         return matchesStatus && matchesSearch && matchesDate
       })
       .sort((a, b) => {
-        return (a.submittedAt ?? Number.MAX_SAFE_INTEGER) - (b.submittedAt ?? Number.MAX_SAFE_INTEGER)
+        const aTs = getClearanceApplicationDateTimestamp(a) ?? Number.MAX_SAFE_INTEGER
+        const bTs = getClearanceApplicationDateTimestamp(b) ?? Number.MAX_SAFE_INTEGER
+        return aTs - bTs
       })
   }, [combinedClearanceApplicants, clearanceApplicantsStatus, normalizedClearanceSearch, clearanceApplicationDateFilter])
 
@@ -3324,12 +3567,13 @@ export default function HomePage() {
                 <th className="border border-border p-3 text-center">Purpose</th>
                 <th className="border border-border p-3 text-center">Application Date</th>
                 <th className="border border-border p-3 text-center">Status</th>
+                <th className="border border-border p-3 text-center">Action</th>
               </tr>
             </thead>
             <tbody>
               {clearanceApplicantsLoading ? (
                 <tr>
-                  <td colSpan={5} className="border border-border p-6 text-center text-muted-foreground">
+                  <td colSpan={6} className="border border-border p-6 text-center text-muted-foreground">
                     Loading applications...
                   </td>
                 </tr>
@@ -3363,11 +3607,56 @@ export default function HomePage() {
                         )
                       })()}
                     </td>
+                    <td className="border border-border p-3 text-center" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => handlePrintClearanceApplication(application, e)}
+                          disabled={
+                            printingClearanceApplicationId === application.id ||
+                            downloadingClearanceApplicationId === application.id ||
+                            (!application.id.startsWith("business-") && !application.applicantUid)
+                          }
+                        >
+                          {printingClearanceApplicationId === application.id ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Printing...
+                            </>
+                          ) : (
+                            "Print"
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => handleDownloadClearanceApplication(application, e)}
+                          disabled={
+                            printingClearanceApplicationId === application.id ||
+                            downloadingClearanceApplicationId === application.id ||
+                            (!application.id.startsWith("business-") && !application.applicantUid)
+                          }
+                        >
+                          {downloadingClearanceApplicationId === application.id ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Downloading...
+                            </>
+                          ) : (
+                            <>
+                              <Download className="h-4 w-4 mr-2" />
+                              Download
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5} className="border border-border p-3 text-center text-muted-foreground">
+                  <td colSpan={6} className="border border-border p-3 text-center text-muted-foreground">
                     No Mayor&apos;s Clearance applications found
                   </td>
                 </tr>
@@ -3757,7 +4046,7 @@ export default function HomePage() {
                           <th className="border border-border p-3 text-center">Full Name</th>
                           <th className="border border-border p-3 text-center">Address</th>
                           <th className="border border-border p-3 text-center">Contact No.</th>
-                          <th className="border border-border p-3 text-center">Application Date</th>
+                          <th className="border border-border p-3 text-center">Approved Date</th>
                         </tr>
                       </thead>
                       <tbody>
