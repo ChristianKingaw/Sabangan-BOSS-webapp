@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { adminAuth, adminDb } from "@/lib/firebase-admin"
 import { BUSINESS_APPLICATION_PATH, normalizeBusinessApplication } from "@/lib/business-applications"
+import { MAYORS_CLEARANCE_APPLICATION_PATH, normalizeClearanceApplicant } from "@/lib/clearance-applications"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -95,25 +96,87 @@ export async function GET(request: NextRequest) {
     return auth.error
   }
 
-  const snapshot = await adminDb.ref(BUSINESS_APPLICATION_PATH).get()
-  if (!snapshot.exists()) {
-    return NextResponse.json({ applications: [] })
-  }
+  const [businessSnapshot, clearanceSnapshot] = await Promise.all([
+    adminDb.ref(BUSINESS_APPLICATION_PATH).get(),
+    adminDb.ref(MAYORS_CLEARANCE_APPLICATION_PATH).get(),
+  ])
 
-  const node = snapshot.val() as Record<string, any>
-  const applications = Object.entries(node)
-    .map(([id, payload]) => {
+  const businessApplications = businessSnapshot.exists()
+    ? Object.entries(businessSnapshot.val() as Record<string, any>).map(([id, payload]) => {
       const normalized = normalizeBusinessApplication(id, payload)
       return {
+        key: `business:${normalized.id}`,
+        source: "business" as const,
         id: normalized.id,
+        applicantUid: normalized.applicantUid ?? null,
         applicantName: normalized.applicantName,
         businessName: normalized.businessName,
         applicationType: normalized.applicationType,
+        purpose: "Business",
         status: normalized.overallStatus || normalized.status || "",
         applicationDate: normalized.applicationDate || null,
         submittedAt: normalized.submittedAt ?? null,
       }
     })
+    : []
+
+  const clearanceApplications = (() => {
+    if (!clearanceSnapshot.exists()) return [] as Array<{
+      key: string
+      source: "mayors_clearance"
+      id: string
+      applicantUid: string
+      applicantName: string
+      businessName: string
+      applicationType: string
+      purpose: string
+      status: string
+      applicationDate: string | number | null
+      submittedAt: number | null
+    }>
+
+    const rows: Array<{
+      key: string
+      source: "mayors_clearance"
+      id: string
+      applicantUid: string
+      applicantName: string
+      businessName: string
+      applicationType: string
+      purpose: string
+      status: string
+      applicationDate: string | number | null
+      submittedAt: number | null
+    }> = []
+
+    const byApplicant = clearanceSnapshot.val() as Record<string, Record<string, any>>
+    Object.entries(byApplicant).forEach(([applicantUid, applications]) => {
+      Object.entries(applications ?? {}).forEach(([applicationId, payload]) => {
+        const normalizedPayload = {
+          ...(payload ?? {}),
+          meta: { applicantUid, ...((payload as any)?.meta ?? {}) },
+        }
+        const normalized = normalizeClearanceApplicant(applicationId, normalizedPayload)
+        rows.push({
+          key: `mayors_clearance:${applicantUid}:${normalized.id}`,
+          source: "mayors_clearance",
+          id: normalized.id,
+          applicantUid: normalized.applicantUid || applicantUid,
+          applicantName: normalized.applicantName || "Unnamed Applicant",
+          businessName: String(normalized.form?.businessName ?? ""),
+          applicationType: "Mayor's Clearance",
+          purpose: normalized.purpose || "Mayor's Clearance",
+          status: normalized.overallStatus || normalized.status || "",
+          applicationDate: normalized.applicationDate ?? null,
+          submittedAt: normalized.submittedAt ?? null,
+        })
+      })
+    })
+
+    return rows
+  })()
+
+  const applications = [...businessApplications, ...clearanceApplications]
     .sort((a, b) => (b.submittedAt ?? 0) - (a.submittedAt ?? 0))
 
   return NextResponse.json({ applications })
@@ -134,13 +197,51 @@ export async function DELETE(request: NextRequest) {
   const idsFromArray = Array.isArray(parsed.body.ids)
     ? parsed.body.ids.map((value) => normalizeString(value)).filter(Boolean)
     : []
+  const legacyBusinessIds = Array.from(new Set([singleId, ...idsFromArray].filter(Boolean)))
 
-  const ids = Array.from(new Set([singleId, ...idsFromArray].filter(Boolean)))
-  if (ids.length === 0) {
+  const typedApplications = Array.isArray(parsed.body.applications)
+    ? parsed.body.applications
+        .map((value) => {
+          const source = normalizeString((value as any)?.source)
+          const id = normalizeString((value as any)?.id)
+          const applicantUid = normalizeString((value as any)?.applicantUid)
+          return {
+            source,
+            id,
+            applicantUid,
+          }
+        })
+        .filter((item) => Boolean(item.source) && Boolean(item.id))
+    : []
+
+  if (legacyBusinessIds.length === 0 && typedApplications.length === 0) {
     return NextResponse.json({ error: "Application id is required." }, { status: 400 })
   }
 
-  await Promise.all(ids.map((id) => adminDb.ref(`${BUSINESS_APPLICATION_PATH}/${id}`).remove()))
+  const deleteTasks: Array<Promise<void>> = []
 
-  return NextResponse.json({ success: true, ids })
+  legacyBusinessIds.forEach((id) => {
+    deleteTasks.push(adminDb.ref(`${BUSINESS_APPLICATION_PATH}/${id}`).remove())
+  })
+
+  typedApplications.forEach((item) => {
+    if (item.source === "business") {
+      deleteTasks.push(adminDb.ref(`${BUSINESS_APPLICATION_PATH}/${item.id}`).remove())
+      return
+    }
+
+    if (item.source === "mayors_clearance" && item.applicantUid) {
+      deleteTasks.push(adminDb.ref(`${MAYORS_CLEARANCE_APPLICATION_PATH}/${item.applicantUid}/${item.id}`).remove())
+    }
+  })
+
+  await Promise.all(deleteTasks)
+
+  return NextResponse.json({
+    success: true,
+    deleted: {
+      legacyBusinessIds,
+      typedApplications,
+    },
+  })
 }

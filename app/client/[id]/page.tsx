@@ -38,6 +38,9 @@ import { PDFDocument } from "pdf-lib"
 const MS_IN_DAY = 24 * 60 * 60 * 1000
 const NEW_LOOKBACK_DAYS = 30
 const PAYMENT_REQUIREMENT_ITEMS = ["Cedula", "Official Receipt"] as const
+const TREASURY_FEES_PATH = "Treasury/fees"
+
+type PaymentRequirementKey = "cedula" | "official-receipt"
 
 const getClientNotificationId = (record: BusinessApplicationRecord | null) =>
   record ? buildRequirementNotificationId(record) ?? `requirements-${record.id}` : null
@@ -235,6 +238,9 @@ function ClientRequirementsContent() {
   const [isPersisting, setIsPersisting] = useState(false)
   const [isAuthReady, setIsAuthReady] = useState(false)
   const [treasuryFeesByClient, setTreasuryFeesByClient] = useState<Record<string, TreasuryFeeAssessmentRecord>>({})
+  const [editingPaymentKey, setEditingPaymentKey] = useState<PaymentRequirementKey | null>(null)
+  const [paymentDrafts, setPaymentDrafts] = useState({ cedula: "", officialReceipt: "" })
+  const [isPaymentSaving, setIsPaymentSaving] = useState(false)
 
   // Define state variables for docx modal and content
   const [docxContent, setDocxContent] = useState<string | null>(null)
@@ -451,6 +457,196 @@ function ClientRequirementsContent() {
 
   const isCedulaPaid = Boolean(String(currentTreasuryAssessment?.cedula_no ?? "").trim())
   const isOfficialReceiptPaid = Boolean(String(currentTreasuryAssessment?.or_no ?? "").trim())
+
+  const cedulaNumber = String(currentTreasuryAssessment?.cedula_no ?? "").trim()
+  const officialReceiptNumber = String(currentTreasuryAssessment?.or_no ?? "").trim()
+
+  const getPaymentDraftValue = useCallback(
+    (key: PaymentRequirementKey) => (key === "cedula" ? paymentDrafts.cedula : paymentDrafts.officialReceipt),
+    [paymentDrafts]
+  )
+
+  const getPaymentCurrentValue = useCallback(
+    (key: PaymentRequirementKey) => (key === "cedula" ? cedulaNumber : officialReceiptNumber),
+    [cedulaNumber, officialReceiptNumber]
+  )
+
+  const beginEditPayment = (key: PaymentRequirementKey) => {
+    setEditingPaymentKey(key)
+    setPaymentDrafts({ cedula: cedulaNumber, officialReceipt: officialReceiptNumber })
+  }
+
+  const cancelEditPayment = () => {
+    setEditingPaymentKey(null)
+  }
+
+  const handlePaymentDraftChange = (key: PaymentRequirementKey, value: string) => {
+    setPaymentDrafts((prev) =>
+      key === "cedula" ? { ...prev, cedula: value } : { ...prev, officialReceipt: value }
+    )
+  }
+
+  const handleSavePayment = async (key: PaymentRequirementKey) => {
+    if (isPaymentSaving) return
+
+    const draftValue = getPaymentDraftValue(key).trim()
+    if (!draftValue) {
+      toast.error(`Please enter a ${key === "cedula" ? "Cedula" : "Official Receipt"} number before saving.`)
+      return
+    }
+
+    const currentValue = getPaymentCurrentValue(key)
+    if (draftValue === currentValue) {
+      setEditingPaymentKey(null)
+      return
+    }
+
+    const currentUser = await waitForAuthUser()
+    if (!currentUser) {
+      toast.error("You must be logged in to update payment numbers.")
+      router.replace("/")
+      return
+    }
+
+    const applicationUid = String(client?.id ?? id ?? "").trim()
+    if (!applicationUid) {
+      toast.error("Missing application ID. Please refresh and try again.")
+      return
+    }
+
+    setIsPaymentSaving(true)
+    try {
+      const idToken = await currentUser.getIdToken(true)
+      const now = Date.now()
+      const prevCedulaNo = cedulaNumber
+      const prevOrNo = officialReceiptNumber
+      const prevCedulaIssuedAt = currentTreasuryAssessment?.cedula_issued_at ?? null
+      const prevOrIssuedAt = currentTreasuryAssessment?.or_issued_at ?? null
+
+      const nextCedulaNo = key === "cedula" ? draftValue : prevCedulaNo
+      const nextOrNo = key === "official-receipt" ? draftValue : prevOrNo
+      const nextCedulaIssuedAt = nextCedulaNo
+        ? nextCedulaNo === prevCedulaNo
+          ? prevCedulaIssuedAt ?? now
+          : now
+        : null
+      const nextOrIssuedAt = nextOrNo
+        ? nextOrNo === prevOrNo
+          ? prevOrIssuedAt ?? now
+          : now
+        : null
+
+      if (currentTreasuryAssessment?.uid) {
+        const updatePayload: Record<string, unknown> = {
+          updatedAt: now,
+          staff_uid: currentUser.uid,
+          staff_email: currentUser.email ?? null,
+          application_uid: applicationUid,
+          client_uid: applicationUid,
+        }
+
+        if (key === "cedula") {
+          updatePayload.cedula_no = nextCedulaNo
+          updatePayload.cedula_issued_at = nextCedulaIssuedAt
+        } else {
+          updatePayload.or_no = nextOrNo
+          updatePayload.or_issued_at = nextOrIssuedAt
+        }
+
+        await firebaseRestUpdate(`${TREASURY_FEES_PATH}/${currentTreasuryAssessment.uid}`, updatePayload, idToken)
+      } else {
+        const payload: Record<string, unknown> = {
+          application_uid: applicationUid,
+          client_uid: applicationUid,
+          cedula_no: nextCedulaNo,
+          cedula_issued_at: nextCedulaIssuedAt,
+          or_no: nextOrNo,
+          or_issued_at: nextOrIssuedAt,
+          fees: currentTreasuryAssessment?.fees ?? {},
+          additional_fees: currentTreasuryAssessment?.additional_fees ?? [],
+          lgu_total: currentTreasuryAssessment?.lgu_total ?? 0,
+          grand_total: currentTreasuryAssessment?.grand_total ?? 0,
+          createdAt: now,
+          updatedAt: now,
+          staff_uid: currentUser.uid,
+          staff_email: currentUser.email ?? null,
+        }
+
+        await firebaseRestPush(TREASURY_FEES_PATH, payload, idToken)
+      }
+
+      setEditingPaymentKey(null)
+      toast.success(`${key === "cedula" ? "Cedula" : "Official Receipt"} number updated.`)
+    } catch (err) {
+      console.error("Failed to update payment number", err)
+      toast.error("Unable to update payment number. Please try again.")
+    } finally {
+      setIsPaymentSaving(false)
+    }
+  }
+
+  const handleDeletePayment = async (key: PaymentRequirementKey) => {
+    if (isPaymentSaving) return
+
+    const currentValue = getPaymentCurrentValue(key)
+    if (!currentValue) {
+      toast.info(`No ${key === "cedula" ? "Cedula" : "Official Receipt"} number to delete.`)
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Remove the ${key === "cedula" ? "Cedula" : "Official Receipt"} number for this application?`
+    )
+    if (!confirmed) return
+
+    const currentUser = await waitForAuthUser()
+    if (!currentUser) {
+      toast.error("You must be logged in to update payment numbers.")
+      router.replace("/")
+      return
+    }
+
+    const applicationUid = String(client?.id ?? id ?? "").trim()
+    if (!applicationUid) {
+      toast.error("Missing application ID. Please refresh and try again.")
+      return
+    }
+
+    if (!currentTreasuryAssessment?.uid) {
+      toast.info("Payment record is not available yet.")
+      return
+    }
+
+    setIsPaymentSaving(true)
+    try {
+      const idToken = await currentUser.getIdToken(true)
+      const now = Date.now()
+      const updatePayload: Record<string, unknown> = {
+        updatedAt: now,
+        staff_uid: currentUser.uid,
+        staff_email: currentUser.email ?? null,
+        application_uid: applicationUid,
+        client_uid: applicationUid,
+      }
+
+      if (key === "cedula") {
+        updatePayload.cedula_no = ""
+        updatePayload.cedula_issued_at = null
+      } else {
+        updatePayload.or_no = ""
+        updatePayload.or_issued_at = null
+      }
+
+      await firebaseRestUpdate(`${TREASURY_FEES_PATH}/${currentTreasuryAssessment.uid}`, updatePayload, idToken)
+      setEditingPaymentKey(null)
+      toast.success(`${key === "cedula" ? "Cedula" : "Official Receipt"} number removed.`)
+    } catch (err) {
+      console.error("Failed to delete payment number", err)
+      toast.error("Unable to remove payment number. Please try again.")
+    } finally {
+      setIsPaymentSaving(false)
+    }
+  }
 
   useEffect(() => {
     if (!id) {
@@ -1574,6 +1770,15 @@ function ClientRequirementsContent() {
   }
 
   const requirementCount = requirements.length + PAYMENT_REQUIREMENT_ITEMS.length
+  const paymentRows = [
+    { key: "cedula", label: "Cedula", paid: isCedulaPaid, number: cedulaNumber },
+    {
+      key: "official-receipt",
+      label: "Official Receipt",
+      paid: isOfficialReceiptPaid,
+      number: officialReceiptNumber,
+    },
+  ] satisfies Array<{ key: PaymentRequirementKey; label: string; paid: boolean; number: string }>
 
   const currentRequirementIndex =
     selectedDocIndex >= 0 && selectedDocIndex < flatDocuments.length
@@ -1750,12 +1955,10 @@ function ClientRequirementsContent() {
                     )
                   })
                 )}
-                {[
-                  { key: "cedula", label: "Cedula", paid: isCedulaPaid },
-                  { key: "official-receipt", label: "Official Receipt", paid: isOfficialReceiptPaid },
-                ].map((item, paymentIndex) => {
+                {paymentRows.map((item, paymentIndex) => {
                   const zeroBasedIndex = requirements.length + paymentIndex
                   const rowIndex = zeroBasedIndex + 1
+                  const isEditing = editingPaymentKey === item.key
                   return (
                     <tr key={item.key} className={zeroBasedIndex % 2 === 0 ? "bg-background" : "bg-muted/30"}>
                       <td className="border border-border p-3 text-center text-muted-foreground align-top">{rowIndex}</td>
@@ -1763,15 +1966,70 @@ function ClientRequirementsContent() {
                         <span className="font-medium text-foreground">{item.label}</span>
                       </td>
                       <td className="border border-border p-3 text-center">
-                        <span
-                          className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            item.paid ? "bg-green-600 text-white" : "bg-amber-100 text-amber-800"
-                          }`}
-                        >
-                          {item.paid ? "Paid" : "Not Paid"}
-                        </span>
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={getPaymentDraftValue(item.key)}
+                            onChange={(event) => handlePaymentDraftChange(item.key, event.target.value)}
+                            placeholder={`Enter ${item.label} number`}
+                            className="h-9 w-full max-w-[240px] rounded-md border border-border px-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center gap-1">
+                            <span
+                              className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                item.paid ? "bg-green-600 text-white" : "bg-amber-100 text-amber-800"
+                              }`}
+                            >
+                              {item.paid ? "Paid" : "Not Paid"}
+                            </span>
+                            {item.number ? (
+                              <span className="text-xs text-muted-foreground">No: {item.number}</span>
+                            ) : null}
+                          </div>
+                        )}
                       </td>
-                      <td className="border border-border p-3 text-center text-xs text-muted-foreground">Treasury</td>
+                      <td className="border border-border p-3 text-center">
+                        {isEditing ? (
+                          <div className="flex items-center justify-center gap-2">
+                            <Button
+                              variant="requirements"
+                              size="sm"
+                              onClick={() => handleSavePayment(item.key)}
+                              disabled={isPaymentSaving}
+                            >
+                              {isPaymentSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={cancelEditPayment}
+                              disabled={isPaymentSaving}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => beginEditPayment(item.key)}
+                              disabled={isPaymentSaving}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleDeletePayment(item.key)}
+                              disabled={isPaymentSaving || !item.number}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        )}
+                      </td>
                     </tr>
                   )
                 })}

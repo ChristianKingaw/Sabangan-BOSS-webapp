@@ -11,6 +11,8 @@ export type ClearanceApplicationRecord = {
   overallStatus?: string
   submittedAt?: number
   applicantUid?: string
+  sourceBucket?: "business" | "mayors_clearance"
+  applicationClass?: "corp_or_association" | "regular_business" | "mayors_clearance"
   requirements: BusinessRequirement[]
   form?: Record<string, any>
 }
@@ -117,6 +119,8 @@ export const normalizeClearanceApplicant = (id: string, payload: any): Clearance
     status,
     overallStatus: derivedOverallStatus,
     submittedAt,
+    sourceBucket: "mayors_clearance",
+    applicationClass: "mayors_clearance",
     requirements: normalizedRequirements,
     form,
   }

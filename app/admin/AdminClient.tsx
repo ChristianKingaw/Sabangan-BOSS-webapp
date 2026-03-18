@@ -29,12 +29,16 @@ type ManagedUser = {
 }
 
 type ManagedBusinessApplication = {
+  key: string
+  source: "business" | "mayors_clearance"
   id: string
+  applicantUid?: string | null
   applicantName: string
   businessName: string
   applicationType: string
+  purpose?: string
   status: string
-  applicationDate?: string | null
+  applicationDate?: string | number | null
 }
 
 type UserFormState = {
@@ -217,7 +221,7 @@ export default function AdminClient() {
 
       setBusinessApplications(applications)
       setSelectedBusinessIds((prev) => {
-        const availableIds = new Set(applications.map((application) => application.id))
+        const availableIds = new Set(applications.map((application) => application.key))
         const next = new Set<string>()
         prev.forEach((id) => {
           if (availableIds.has(id)) next.add(id)
@@ -226,7 +230,7 @@ export default function AdminClient() {
       })
     } catch (err) {
       console.error(err)
-      toast.error(err instanceof Error ? err.message : "Failed to load business applications")
+      toast.error(err instanceof Error ? err.message : "Failed to load applications")
       setBusinessApplications([])
       setSelectedBusinessIds(new Set())
     } finally {
@@ -422,17 +426,53 @@ export default function AdminClient() {
   const deleteSelectedBusinessApplications = async () => {
     if (selectedBusinessIds.size === 0) return
 
-    const confirmDelete = window.confirm("Delete selected business applications?")
+    const confirmDelete = window.confirm("Delete selected applications?")
     if (!confirmDelete) return
 
     try {
-      await apiBusinessRequest("DELETE", { ids: Array.from(selectedBusinessIds) })
+      const selectedApplications = businessApplications
+        .filter((application) => selectedBusinessIds.has(application.key))
+        .map((application) => ({
+          source: application.source,
+          id: application.id,
+          applicantUid: application.applicantUid ?? null,
+        }))
+
+      await apiBusinessRequest("DELETE", { applications: selectedApplications })
       setSelectedBusinessIds(new Set())
       await loadBusinessApplications()
-      toast.success("Selected business applications deleted")
+      toast.success("Selected applications deleted")
     } catch (err) {
       console.error(err)
-      toast.error(err instanceof Error ? err.message : "Failed to delete selected business applications")
+      toast.error(err instanceof Error ? err.message : "Failed to delete selected applications")
+    }
+  }
+
+  const deleteSingleApplication = async (application: ManagedBusinessApplication) => {
+    const confirmDelete = window.confirm("Delete this application?")
+    if (!confirmDelete) return
+
+    try {
+      await apiBusinessRequest("DELETE", {
+        applications: [
+          {
+            source: application.source,
+            id: application.id,
+            applicantUid: application.applicantUid ?? null,
+          },
+        ],
+      })
+
+      setSelectedBusinessIds((prev) => {
+        const next = new Set(prev)
+        next.delete(application.key)
+        return next
+      })
+      await loadBusinessApplications()
+      toast.success("Application deleted")
+    } catch (err) {
+      console.error(err)
+      toast.error(err instanceof Error ? err.message : "Failed to delete application")
     }
   }
 
@@ -451,7 +491,7 @@ export default function AdminClient() {
       setSelectedBusinessIds(new Set())
       return
     }
-    setSelectedBusinessIds(new Set(businessApplications.map((application) => application.id)))
+    setSelectedBusinessIds(new Set(businessApplications.map((application) => application.key)))
   }
 
   if (authLoading) {
@@ -775,7 +815,7 @@ export default function AdminClient() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Business Applications ({businessApplications.length})</CardTitle>
+          <CardTitle>Applications ({businessApplications.length})</CardTitle>
           <Button
             size="sm"
             variant="destructive"
@@ -798,52 +838,76 @@ export default function AdminClient() {
                     aria-label="Select all business applications"
                   />
                 </TableHead>
+                <TableHead>Source</TableHead>
                 <TableHead>Applicant</TableHead>
                 <TableHead>Business</TableHead>
                 <TableHead>Type</TableHead>
+                <TableHead>Purpose</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Application Date</TableHead>
+                <TableHead className="w-24">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {businessApplications.map((application) => (
-                <TableRow key={application.id}>
+                <TableRow key={application.key}>
                   <TableCell>
                     <input
                       type="checkbox"
                       className="h-4 w-4"
-                      checked={selectedBusinessIds.has(application.id)}
-                      onChange={() => toggleSelectBusinessApplication(application.id)}
-                      aria-label={`Select application ${application.id}`}
+                      checked={selectedBusinessIds.has(application.key)}
+                      onChange={() => toggleSelectBusinessApplication(application.key)}
+                      aria-label={`Select application ${application.key}`}
                     />
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      className={cn(
+                        application.source === "business"
+                          ? "bg-blue-100 text-blue-800"
+                          : "bg-emerald-100 text-emerald-800"
+                      )}
+                    >
+                      {application.source === "business" ? "Business" : "Mayor's Clearance"}
+                    </Badge>
                   </TableCell>
                   <TableCell className="font-medium">{application.applicantName || "Unnamed Applicant"}</TableCell>
                   <TableCell>{application.businessName || "—"}</TableCell>
                   <TableCell>{application.applicationType || "—"}</TableCell>
+                  <TableCell>{application.purpose || "—"}</TableCell>
                   <TableCell>{application.status || "Pending"}</TableCell>
                   <TableCell>
                     {application.applicationDate
                       ? (() => {
-                          const parsed = new Date(application.applicationDate)
+                          const parsed = new Date(application.applicationDate as string | number)
                           return Number.isNaN(parsed.getTime()) ? "—" : parsed.toLocaleDateString()
                         })()
                       : "—"}
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => deleteSingleApplication(application)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
 
               {!businessLoading && businessApplications.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-sm text-gray-500">
-                    No business applications found.
+                  <TableCell colSpan={9} className="text-center text-sm text-gray-500">
+                    No applications found.
                   </TableCell>
                 </TableRow>
               )}
 
               {businessLoading && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-sm text-gray-500">
-                    Loading business applications...
+                  <TableCell colSpan={9} className="text-center text-sm text-gray-500">
+                    Loading applications...
                   </TableCell>
                 </TableRow>
               )}

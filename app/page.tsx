@@ -1079,11 +1079,63 @@ export default function HomePage() {
     setBarangayLoadingFiles(new Set(built.documents.map((doc) => doc.file.id)))
   }
 
+  const normalizeBusinessTypeLabel = (value: unknown) =>
+    String(value ?? "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim()
+
+  const classifyBusinessApplication = (record: ClearanceApplicationRecord) => {
+    if (record.applicationClass === "corp_or_association" || record.applicationClass === "regular_business") {
+      return record.applicationClass
+    }
+    const businessType = normalizeBusinessTypeLabel(record.form?.businessType)
+    if (
+      businessType.includes("corporation") ||
+      businessType.includes("association") ||
+      businessType.includes("assoc")
+    ) {
+      return "corp_or_association" as const
+    }
+    return "regular_business" as const
+  }
+
+  const resolveClearanceExportPayload = (record: ClearanceApplicationRecord) => {
+    const sourceBucket =
+      record.sourceBucket ??
+      (record.id.startsWith("business-") ? "business" : "mayors_clearance")
+
+    if (sourceBucket === "business") {
+      const businessId = record.id.startsWith("business-")
+        ? record.id.slice("business-".length)
+        : record.id
+
+      return {
+        isBusinessRecord: true,
+        body: {
+          applicationSource: "business" as const,
+          applicationClass: classifyBusinessApplication(record),
+          businessApplicationId: businessId,
+        },
+      }
+    }
+
+    return {
+      isBusinessRecord: false,
+      body: {
+        applicationSource: "mayors_clearance" as const,
+        applicationClass: "mayors_clearance" as const,
+        applicantUid: record.applicantUid,
+        applicationId: record.id,
+      },
+    }
+  }
+
   const handlePrintClearanceApplication = useCallback(
     async (record: ClearanceApplicationRecord, event?: React.MouseEvent) => {
       event?.stopPropagation()
 
-      const isBusinessRecord = record.id.startsWith("business-")
+      const { isBusinessRecord, body } = resolveClearanceExportPayload(record)
       if (!isBusinessRecord && !record.applicantUid) {
         toast.error("Missing applicant information for this record.")
         return
@@ -1106,14 +1158,7 @@ export default function HomePage() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${idToken}`,
           },
-          body: JSON.stringify(
-            isBusinessRecord
-              ? { businessApplicationId: record.id.slice("business-".length) }
-              : {
-                  applicantUid: record.applicantUid,
-                  applicationId: record.id,
-                }
-          ),
+          body: JSON.stringify(body),
         })
 
         if (!response.ok) {
@@ -1143,7 +1188,7 @@ export default function HomePage() {
     async (record: ClearanceApplicationRecord, event?: React.MouseEvent) => {
       event?.stopPropagation()
 
-      const isBusinessRecord = record.id.startsWith("business-")
+      const { isBusinessRecord, body } = resolveClearanceExportPayload(record)
       if (!isBusinessRecord && !record.applicantUid) {
         toast.error("Missing applicant information for this record.")
         return
@@ -1166,14 +1211,7 @@ export default function HomePage() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${idToken}`,
           },
-          body: JSON.stringify(
-            isBusinessRecord
-              ? { businessApplicationId: record.id.slice("business-".length) }
-              : {
-                  applicantUid: record.applicantUid,
-                  applicationId: record.id,
-                }
-          ),
+          body: JSON.stringify(body),
         })
 
         if (!response.ok) {
@@ -1337,6 +1375,13 @@ export default function HomePage() {
         status: "Approved",
         overallStatus: "Approved",
         submittedAt: client.approvedAt ?? client.submittedAt,
+        sourceBucket: "business" as const,
+        applicationClass:
+          String(client.form?.businessType ?? "").toLowerCase().includes("corporation") ||
+          String(client.form?.businessType ?? "").toLowerCase().includes("association") ||
+          String(client.form?.businessType ?? "").toLowerCase().includes("assoc")
+            ? ("corp_or_association" as const)
+            : ("regular_business" as const),
         requirements: [],
         form: client.form,
       }))

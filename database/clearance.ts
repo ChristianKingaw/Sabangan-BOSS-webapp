@@ -1,5 +1,6 @@
 import { realtimeDb } from "@/database/firebase"
-import { get, onValue, push, ref, set, Unsubscribe } from "firebase/database"
+import { auth } from "@/database/firebase"
+import { onValue, ref, Unsubscribe } from "firebase/database"
 
 export type ClearanceFileRecord = {
   fileName: string
@@ -10,33 +11,52 @@ export type ClearanceFileRecord = {
 }
 
 const CLEARANCE_PATH = "mayors_clearance_files"
-
-const getFileYearKey = (fileName: unknown): string | null => {
-  const match = String(fileName ?? "").match(/(19|20)\d{2}/)
-  return match ? match[0] : null
-}
+const CLEARANCE_API_PATH = "/api/clearance-files"
 
 /**
  * Persist a generated Mayor's Clearance Excel file (base64) with metadata.
  */
 export async function saveClearanceFile(record: ClearanceFileRecord) {
-  const yearKey = getFileYearKey(record.fileName)
-  const clearanceRef = ref(realtimeDb, CLEARANCE_PATH)
-  if (yearKey) {
-    const perYearRef = ref(realtimeDb, `${CLEARANCE_PATH}/${String(yearKey)}`)
-    await set(perYearRef, record)
-    return
+  const idToken = await auth?.currentUser?.getIdToken()
+  if (!idToken) {
+    throw new Error("Authentication required to save clearance file.")
   }
 
-  await push(clearanceRef, record)
+  const response = await fetch(CLEARANCE_API_PATH, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify(record),
+  })
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "")
+    throw new Error(body || `Failed to save clearance file (HTTP ${response.status})`)
+  }
 }
 
 /**
  * Delete all saved Mayor's Clearance files.
  */
 export async function clearClearanceFiles() {
-  const clearanceRef = ref(realtimeDb, CLEARANCE_PATH)
-  await set(clearanceRef, null)
+  const idToken = await auth?.currentUser?.getIdToken()
+  if (!idToken) {
+    throw new Error("Authentication required to clear clearance files.")
+  }
+
+  const response = await fetch(CLEARANCE_API_PATH, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "")
+    throw new Error(body || `Failed to clear clearance files (HTTP ${response.status})`)
+  }
 }
 
 export type ClearanceFileWithId = ClearanceFileRecord & { id: string }
@@ -108,30 +128,27 @@ export function subscribeToClearanceFiles(callback: (rows: ClearanceFileWithId[]
 
 export async function fetchClearanceFilesOnce(): Promise<ClearanceFileWithId[]> {
   try {
-    const snapshot = await get(ref(realtimeDb, CLEARANCE_PATH))
-    if (!snapshot.exists()) return []
+    const idToken = await auth?.currentUser?.getIdToken()
+    if (!idToken) return []
 
-    const value = snapshot.val() || {}
-    const list: ClearanceFileWithId[] = []
+    const response = await fetch(CLEARANCE_API_PATH, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+      },
+      cache: "no-store",
+    })
 
-    const seen = new Set<string>()
-    for (const [id, payload] of Object.entries(value) as Array<[string, any]>) {
-      const normalizedCreatedAt = normalizeTimestamp(payload?.createdAt)
-      const key = `${payload?.fileName ?? ""}|${normalizedCreatedAt}|${payload?.rowCount ?? 0}|${payload?.createdBy ?? ""}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      list.push({
-        id,
-        fileName: payload?.fileName ?? "",
-        createdAt: normalizedCreatedAt,
-        rowCount: payload?.rowCount ?? 0,
-        dataBase64: payload?.dataBase64 ?? "",
-        createdBy: payload?.createdBy ?? null,
-      })
+    if (!response.ok) {
+      const body = await response.text().catch(() => "")
+      throw new Error(body || `Failed to fetch clearance files (HTTP ${response.status})`)
     }
 
-    list.sort((a, b) => b.createdAt - a.createdAt)
-    return list
+    const payload = (await response.json().catch(() => ({}))) as {
+      files?: ClearanceFileWithId[]
+    }
+
+    return Array.isArray(payload.files) ? payload.files : []
   } catch (err) {
     console.error("Failed to fetch clearance files", err)
     return []

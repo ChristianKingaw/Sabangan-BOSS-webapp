@@ -481,6 +481,8 @@ function ClearanceRequirementsContent() {
           Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
+          applicationSource: "mayors_clearance",
+          applicationClass: "mayors_clearance",
           applicantUid,
           applicationId: application.id,
         }),
