@@ -32,6 +32,8 @@ serviceAccountKey.json
 # local build/deploy artifacts
 .firebase/
 .tmp/
+firebase-debug.log
+firebase-debug*.log
 database-debug.log
 firestore-debug.log
 tsconfig.tsbuildinfo
