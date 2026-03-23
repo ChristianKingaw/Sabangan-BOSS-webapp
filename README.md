@@ -26,6 +26,7 @@
 ## Table of Contents
 
 - [At A Glance](#at-a-glance)
+- [System Flowchart](#system-flowchart)
 - [What This System Covers](#what-this-system-covers)
 - [Screenshots](#screenshots)
 - [Stack](#stack)
@@ -42,6 +43,63 @@
 - Document-heavy workflow support: DOCX generation, PDF conversion, and printable exports.
 - Firebase-centered architecture with Next.js App Router APIs.
 - Production path includes Firebase Hosting + Cloud Run converter service.
+
+## System Flowchart
+
+```mermaid
+flowchart LR
+  subgraph Actors["Users and Portals"]
+    staff["Staff (/)"]
+    admin["Admin (/admin)"]
+    treasury["Treasury (/treasury)"]
+    public["Public (/lgu-status)"]
+  end
+
+  subgraph Web["Next.js Web App (App Router)"]
+    ui["Client UI + Firebase Client SDK"]
+    api["Route Handlers (app/api/*)"]
+    templates["Document Templates (/templates)"]
+    cache["Redis Preview Cache (optional)"]
+    localjson["Local JSON routes (/api/local-users, /api/local-business)"]
+  end
+
+  subgraph Firebase["Firebase Platform"]
+    auth["Firebase Auth"]
+    rtdb["Realtime Database"]
+    storage["Firebase Storage"]
+  end
+
+  subgraph Convert["Document Conversion Layer"]
+    rewrite["Firebase Hosting rewrite (/api/convert/*)"]
+    cloudrun["Cloud Run converter (LibreOffice)"]
+    localconv["Local converter fallback (localhost:8080)"]
+    wordcom["Windows fallback: Word COM (clearance PDF)"]
+  end
+
+  staff --> ui
+  admin --> ui
+  treasury --> ui
+  public --> ui
+
+  ui <--> auth
+  ui <--> rtdb
+  ui --> api
+  ui --> localjson
+
+  api --> auth
+  api --> rtdb
+  api --> storage
+  api --> templates
+  api <--> cache
+
+  api --> rewrite --> cloudrun
+  api -. local fallback .-> localconv
+  api -. clearance fallback .-> wordcom
+```
+
+- Main app pages use Firebase client SDK for real-time data and authentication.
+- Protected/admin operations run through Next.js route handlers using Firebase Admin SDK token checks.
+- Document exports render templates server-side, then convert via Cloud Run (with local/Windows fallbacks as needed).
 
 ## What This System Covers
 
