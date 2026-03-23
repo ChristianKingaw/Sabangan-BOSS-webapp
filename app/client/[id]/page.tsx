@@ -60,6 +60,8 @@ type RequirementDocumentItem = {
 
 // Firebase RTDB keys cannot include . # $ [ ] or /. Ensure string conversion first.
 const sanitizeKey = (value: unknown) => (String(value ?? "").replace(/[.#$\[\]/]/g, "-") || "-")
+// fix: 4 — scope notification read-state storage key by staff
+const getReadNotificationsStorageKey = (staffId: string) => `notifications_read:${staffId}`
 
 // Firebase REST API helper to bypass SDK cache issues (ChildrenNode.equals recursion)
 const FIREBASE_DB_URL = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || ""
@@ -653,6 +655,7 @@ function ClientRequirementsContent() {
       return
     }
 
+    setRequirementsLoaded(false)
     setIsLoading(true)
     setError(null)
 
@@ -662,11 +665,13 @@ function ClientRequirementsContent() {
       (snapshot) => {
         if (!snapshot.exists()) {
           setClient(null)
+          setRequirementsLoaded(false)
           setError("Client not found.")
           setIsLoading(false)
           return
         }
 
+        setRequirementsLoaded(false)
         setClient(normalizeBusinessApplication(snapshot.key ?? id, snapshot.val()))
         setError(null)
         setIsLoading(false)
@@ -674,6 +679,7 @@ function ClientRequirementsContent() {
       (err) => {
         console.error("Failed to load client record", err)
         setClient(null)
+        setRequirementsLoaded(false)
         setError("Unable to load client record. Please try again later.")
         setIsLoading(false)
       }
@@ -1037,13 +1043,14 @@ function ClientRequirementsContent() {
       // Mark client notification read & cleared in localStorage so home updates
       try {
         if (client) {
+          const readKey = getReadNotificationsStorageKey(currentUser.uid)
           const clientNotificationId = getClientNotificationId(client)
           if (!clientNotificationId) return
-          const stored = localStorage.getItem("bossReadNotifications")
+          const stored = localStorage.getItem(readKey)
           const parsed: string[] = stored ? JSON.parse(stored) : []
           if (!parsed.includes(clientNotificationId)) {
             parsed.push(clientNotificationId)
-            localStorage.setItem("bossReadNotifications", JSON.stringify(parsed))
+            localStorage.setItem(readKey, JSON.stringify(parsed))
 
             try {
               const namesKey = "bossNotificationNames"
@@ -1562,6 +1569,7 @@ function ClientRequirementsContent() {
   }, [cleanupFormPreviewUrls, formPreviewTempUrls, formPreviewUrl])
 
   const [unreadRequirements, setUnreadRequirements] = useState<Set<string>>(new Set())
+  const [requirementsLoaded, setRequirementsLoaded] = useState(false)
   const previousFilesRef = useRef<Map<string, { fileName: string; fileSize: number; fileHash: string; status: string }>>(new Map())
 
   useEffect(() => {
@@ -1619,7 +1627,10 @@ function ClientRequirementsContent() {
   }, [client, getAuthInstance])
 
   useEffect(() => {
-    if (!client) return
+    if (!client) {
+      setRequirementsLoaded(false)
+      return
+    }
 
     const cutoff = Date.now() - NEW_LOOKBACK_DAYS * MS_IN_DAY
     setUnreadRequirements((prev) => {
@@ -1643,6 +1654,8 @@ function ClientRequirementsContent() {
       })
       return updatedUnread
     })
+    // fix: 2 — mark requirements as loaded only after unread derivation runs
+    setRequirementsLoaded(true)
   }, [client])
 
   const handleViewRequirement = (requirementId: string) => {
@@ -1668,13 +1681,16 @@ function ClientRequirementsContent() {
     setTimeout(() => {
       try {
         if (!client) return
+        const staffId = getAuthInstance()?.currentUser?.uid
+        if (!staffId) return
+        const readKey = getReadNotificationsStorageKey(staffId)
         const clientNotificationId = getClientNotificationId(client)
         if (!clientNotificationId) return
-        const stored = localStorage.getItem("bossReadNotifications")
+        const stored = localStorage.getItem(readKey)
         const parsed: string[] = stored ? JSON.parse(stored) : []
         if (!parsed.includes(clientNotificationId)) {
           parsed.push(clientNotificationId)
-          localStorage.setItem("bossReadNotifications", JSON.stringify(parsed))
+          localStorage.setItem(readKey, JSON.stringify(parsed))
           try {
             const namesKey = "bossNotificationNames"
             const storedNames = localStorage.getItem(namesKey)
@@ -1695,6 +1711,10 @@ function ClientRequirementsContent() {
   // When there are no more unread requirement files for this client, mark notification as read
   useEffect(() => {
     if (!client) return
+    if (!requirementsLoaded) return
+    const staffId = getAuthInstance()?.currentUser?.uid
+    if (!staffId) return
+    const readKey = getReadNotificationsStorageKey(staffId)
 
     const clientNotificationId = getClientNotificationId(client)
     if (!clientNotificationId) return
@@ -1702,11 +1722,11 @@ function ClientRequirementsContent() {
     const hasUnreadForClient = client.requirements.some((req) => req.files.some((f) => unreadRequirements.has(f.id)))
     if (!hasUnreadForClient) {
       try {
-        const stored = localStorage.getItem("bossReadNotifications")
+        const stored = localStorage.getItem(readKey)
         const parsed: string[] = stored ? JSON.parse(stored) : []
         if (!parsed.includes(clientNotificationId)) {
           parsed.push(clientNotificationId)
-          localStorage.setItem("bossReadNotifications", JSON.stringify(parsed))
+          localStorage.setItem(readKey, JSON.stringify(parsed))
           try {
             const namesKey = "bossNotificationNames"
             const storedNames = localStorage.getItem(namesKey)
@@ -1723,7 +1743,7 @@ function ClientRequirementsContent() {
         }
       } catch {}
     }
-  }, [unreadRequirements, client])
+  }, [unreadRequirements, client, requirementsLoaded, getAuthInstance])
 
   const handleBack = () => {
     const fromParam = searchParams.get("from")

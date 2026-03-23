@@ -55,7 +55,7 @@ import {
   signOut,
 } from "firebase/auth"
 import { FirebaseError } from "firebase/app"
-import { onValue, ref, off, get, update } from "firebase/database"
+import { onValue, ref, get, update } from "firebase/database"
 import { cn } from "@/lib/utils"
 import { handlePrintHtml, handlePrintPdf } from "@/lib/print"
 import { toast } from "sonner"
@@ -246,6 +246,25 @@ type NotificationGroup = {
 
 type ClearanceStatusFilter = "All" | "Approved" | "Pending" | "Rejected"
 
+// fix: 3 — stable fallback hash for deterministic notification IDs/timestamps
+const stableHashId = (value: string): number => [...value].reduce((acc, char) => acc + char.charCodeAt(0), 0)
+
+const getStableRequirementTimestamp = (
+  requirementName: string,
+  file: BusinessRequirementFile & Partial<Record<"updatedAt" | "createdAt" | "path" | "name", unknown>>
+): number => {
+  const updatedAt = toSortableTimestamp(file.updatedAt)
+  if (updatedAt !== undefined) return updatedAt
+
+  const createdAt = toSortableTimestamp(file.createdAt)
+  if (createdAt !== undefined) return createdAt
+
+  const stableSource = String(
+    file.path ?? file.name ?? file.storagePath ?? file.fileName ?? `${requirementName}:${file.id || "unknown"}`
+  )
+  return stableHashId(stableSource)
+}
+
 const buildNotificationEvents = (records: BusinessApplicationRecord[]): NotificationEvent[] => {
   const events: NotificationEvent[] = []
 
@@ -263,11 +282,12 @@ const buildNotificationEvents = (records: BusinessApplicationRecord[]): Notifica
     record.requirements.forEach((requirement) => {
       requirement.files.forEach((file) => {
         const statusLower = (file.status ?? "").toLowerCase()
-        let ts = typeof file.uploadedAt === "number" ? file.uploadedAt : undefined
-        if (!ts && statusLower === "updated") {
-          ts = Date.now()
+        let ts =
+          typeof file.uploadedAt === "number" && Number.isFinite(file.uploadedAt) ? file.uploadedAt : undefined
+        if (ts === undefined && statusLower === "updated") {
+          ts = getStableRequirementTimestamp(requirement.name, file)
         }
-        if (!ts) {
+        if (ts === undefined) {
           return
         }
 
@@ -513,6 +533,9 @@ const getStoredEmail = () => {
   }
 }
 
+// fix: 4 — scope notification read-state storage key by staff
+const getReadNotificationsStorageKey = (staffId: string) => `notifications_read:${staffId}`
+
 async function hashPassword(value: string) {
   if (typeof window !== "undefined" && window.crypto?.subtle) {
     const encoder = new TextEncoder()
@@ -638,6 +661,7 @@ export default function HomePage() {
   // Prefer rendering immediately; hydrate-only logic stays inside effects to avoid flicker between pages
   const [showPassword, setShowPassword] = useState(false)
   const [loggedInEmail, setLoggedInEmail] = useState<string | null>(null)
+  const [currentStaffId, setCurrentStaffId] = useState<string | null>(null)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [isAuthChecking, setIsAuthChecking] = useState(true)
   const [email, setEmail] = useState("")
@@ -1553,8 +1577,14 @@ export default function HomePage() {
       return
     }
 
+    if (!currentStaffId) {
+      setReadNotifications(new Set())
+      setIsReadNotificationsLoaded(false)
+      return
+    }
+
     try {
-      const stored = localStorage.getItem("bossReadNotifications")
+      const stored = localStorage.getItem(getReadNotificationsStorageKey(currentStaffId))
       if (stored) {
         const parsed = JSON.parse(stored)
         setReadNotifications(new Set(parsed))
@@ -1567,7 +1597,7 @@ export default function HomePage() {
       }
     } catch {}
     setIsReadNotificationsLoaded(true)
-  }, [])
+  }, [currentStaffId])
 
   useEffect(() => {
     let unsubscribe = () => {}
@@ -1581,6 +1611,7 @@ export default function HomePage() {
         if (user) {
           setIsLoggedIn(true)
           setLoggedInEmail(user.email ?? null)
+          setCurrentStaffId(user.uid)
           if (typeof window !== "undefined" && user.email) {
             localStorage.setItem("bossStaffEmail", user.email.toLowerCase())
           }
@@ -1588,6 +1619,7 @@ export default function HomePage() {
         } else {
           setIsLoggedIn(false)
           setLoggedInEmail(null)
+          setCurrentStaffId(null)
           if (typeof window !== "undefined") {
             localStorage.removeItem("bossStaffEmail")
           }
@@ -1612,17 +1644,24 @@ export default function HomePage() {
     if (!isReadNotificationsLoaded) {
       return
     }
+    if (!currentStaffId) {
+      return
+    }
     try {
-      localStorage.setItem("bossReadNotifications", JSON.stringify([...readNotifications]))
+      localStorage.setItem(getReadNotificationsStorageKey(currentStaffId), JSON.stringify([...readNotifications]))
     } catch {}
-  }, [readNotifications, isReadNotificationsLoaded])
+  }, [readNotifications, isReadNotificationsLoaded, currentStaffId])
 
   // Listen for external updates to bossReadNotifications (from client pages)
   useEffect(() => {
+    if (!currentStaffId) {
+      return
+    }
+
     const handler = () => {
       if (typeof window === "undefined") return
       try {
-        const stored = localStorage.getItem("bossReadNotifications")
+        const stored = localStorage.getItem(getReadNotificationsStorageKey(currentStaffId))
         if (!stored) return
         const parsed = JSON.parse(stored)
         setReadNotifications(new Set(parsed))
@@ -1641,7 +1680,7 @@ export default function HomePage() {
       window.removeEventListener("bossReadNotifications:update", handler)
       window.removeEventListener("storage", handler)
     }
-  }, [])
+  }, [currentStaffId])
 
   // If the root page is opened with a `?page=...` query param, use that
   // to initialize the UI view. This allows detail pages to navigate back to
@@ -1677,6 +1716,7 @@ export default function HomePage() {
     setClientsError(null)
 
     const businessRef = ref(realtimeDb, BUSINESS_APPLICATION_PATH)
+    // fix: 1 — keep listener cleanup scoped to this subscription
     const unsubscribe = onValue(
       businessRef,
       (snapshot) => {
@@ -3090,21 +3130,16 @@ export default function HomePage() {
             </div>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 relative z-10 max-w-3xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 relative z-10 max-w-5xl mx-auto">
             <div className="group relative overflow-hidden bg-gradient-to-br from-blue-50 via-blue-100 to-indigo-100 dark:from-blue-950/50 dark:via-blue-900/50 dark:to-indigo-900/50 border border-blue-200/50 dark:border-blue-800/50 rounded-2xl p-6 shadow-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
               <div className="absolute inset-0 bg-gradient-to-br from-blue-400/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
               <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full -translate-y-16 translate-x-16 blur-2xl group-hover:bg-blue-500/20 transition-colors duration-500"></div>
-              
+
               <div className="relative z-10 flex items-center gap-4">
-                <div className="relative">
-                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-xl group-hover:shadow-2xl transition-shadow duration-500">
-                    <FileText className="h-10 w-10 text-white" />
-                  </div>
-                  <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-blue-400 rounded-full border-2 border-white dark:border-gray-900 flex items-center justify-center">
-                    <span className="text-xs font-bold text-white">📋</span>
-                  </div>
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-xl group-hover:shadow-2xl transition-shadow duration-500">
+                  <FileText className="h-10 w-10 text-white" />
                 </div>
-                
+
                 <div className="flex-1">
                   <div className="flex items-baseline gap-2 mb-1">
                     <p className="text-4xl font-bold text-blue-900 dark:text-blue-100 group-hover:text-blue-800 dark:group-hover:text-blue-200 transition-colors duration-300">
@@ -3112,32 +3147,31 @@ export default function HomePage() {
                     </p>
                     <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
                   </div>
-                  <p className="text-blue-700 dark:text-blue-300 font-semibold text-lg mb-1">Total Registrants</p>
-                  <p className="text-sm text-blue-600/80 dark:text-blue-400/80">Active business applications</p>
+                  <p className="text-blue-700 dark:text-blue-300 font-semibold text-base md:text-lg mb-1">
+                    Total Registrants for the Business Application
+                  </p>
+                  <p className="text-sm text-blue-600/80 dark:text-blue-400/80">All submitted business applications</p>
                   <div className="mt-3 flex items-center gap-1">
                     <div className="h-1 bg-blue-200 dark:bg-blue-800 rounded-full flex-1">
-                      <div className="h-1 bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-1000" 
-                           style={{width: clientsLoading ? '0%' : '100%'}}></div>
+                      <div
+                        className="h-1 bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-1000"
+                        style={{ width: clientsLoading ? "0%" : "100%" }}
+                      ></div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-            
+
             <div className="group relative overflow-hidden bg-gradient-to-br from-emerald-50 via-green-100 to-teal-100 dark:from-emerald-950/50 dark:via-green-900/50 dark:to-teal-900/50 border border-emerald-200/50 dark:border-emerald-800/50 rounded-2xl p-6 shadow-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
               <div className="absolute inset-0 bg-gradient-to-br from-emerald-400/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
               <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full -translate-y-16 translate-x-16 blur-2xl group-hover:bg-emerald-500/20 transition-colors duration-500"></div>
-              
+
               <div className="relative z-10 flex items-center gap-4">
-                <div className="relative">
-                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center shadow-xl group-hover:shadow-2xl transition-shadow duration-500">
-                    <Check className="h-10 w-10 text-white" />
-                  </div>
-                  <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-emerald-400 rounded-full border-2 border-white dark:border-gray-900 flex items-center justify-center">
-                    <span className="text-xs font-bold text-white">✅</span>
-                  </div>
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center shadow-xl group-hover:shadow-2xl transition-shadow duration-500">
+                  <Check className="h-10 w-10 text-white" />
                 </div>
-                
+
                 <div className="flex-1">
                   <div className="flex items-baseline gap-2 mb-1">
                     <p className="text-4xl font-bold text-emerald-900 dark:text-emerald-100 group-hover:text-emerald-800 dark:group-hover:text-emerald-200 transition-colors duration-300">
@@ -3145,12 +3179,80 @@ export default function HomePage() {
                     </p>
                     <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
                   </div>
-                  <p className="text-emerald-700 dark:text-emerald-300 font-semibold text-lg mb-1">Processed Applications</p>
-                  <p className="text-sm text-emerald-600/80 dark:text-emerald-400/80">Approved & completed</p>
+                  <p className="text-emerald-700 dark:text-emerald-300 font-semibold text-base md:text-lg mb-1">Processed Applications</p>
+                  <p className="text-sm text-emerald-600/80 dark:text-emerald-400/80">Business applications marked approved or processed</p>
                   <div className="mt-3 flex items-center gap-1">
                     <div className="h-1 bg-emerald-200 dark:bg-emerald-800 rounded-full flex-1">
-                      <div className="h-1 bg-gradient-to-r from-emerald-500 to-green-600 rounded-full transition-all duration-1000" 
-                           style={{width: clientsLoading ? '0%' : '100%'}}></div>
+                      <div
+                        className="h-1 bg-gradient-to-r from-emerald-500 to-green-600 rounded-full transition-all duration-1000"
+                        style={{ width: clientsLoading ? "0%" : "100%" }}
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="group relative overflow-hidden bg-gradient-to-br from-amber-50 via-yellow-100 to-orange-100 dark:from-amber-950/50 dark:via-yellow-900/50 dark:to-orange-900/50 border border-amber-200/50 dark:border-amber-800/50 rounded-2xl p-6 shadow-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
+              <div className="absolute inset-0 bg-gradient-to-br from-amber-400/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+              <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full -translate-y-16 translate-x-16 blur-2xl group-hover:bg-amber-500/20 transition-colors duration-500"></div>
+
+              <div className="relative z-10 flex items-center gap-4">
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-xl group-hover:shadow-2xl transition-shadow duration-500">
+                  <Award className="h-10 w-10 text-white" />
+                </div>
+
+                <div className="flex-1">
+                  <div className="flex items-baseline gap-2 mb-1">
+                    <p className="text-4xl font-bold text-amber-900 dark:text-amber-100 group-hover:text-amber-800 dark:group-hover:text-amber-200 transition-colors duration-300">
+                      {clearanceApplicantsLoading ? "..." : clearanceApplicants.length}
+                    </p>
+                    <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></div>
+                  </div>
+                  <p className="text-amber-700 dark:text-amber-300 font-semibold text-base md:text-lg mb-1">
+                    Total Registrants for the Mayor&apos;s Clearance
+                  </p>
+                  <p className="text-sm text-amber-600/80 dark:text-amber-400/80">All submitted Mayor&apos;s Clearance applications</p>
+                  <div className="mt-3 flex items-center gap-1">
+                    <div className="h-1 bg-amber-200 dark:bg-amber-800 rounded-full flex-1">
+                      <div
+                        className="h-1 bg-gradient-to-r from-amber-500 to-orange-600 rounded-full transition-all duration-1000"
+                        style={{ width: clearanceApplicantsLoading ? "0%" : "100%" }}
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="group relative overflow-hidden bg-gradient-to-br from-cyan-50 via-sky-100 to-teal-100 dark:from-cyan-950/50 dark:via-sky-900/50 dark:to-teal-900/50 border border-cyan-200/50 dark:border-cyan-800/50 rounded-2xl p-6 shadow-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
+              <div className="absolute inset-0 bg-gradient-to-br from-cyan-400/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+              <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full -translate-y-16 translate-x-16 blur-2xl group-hover:bg-cyan-500/20 transition-colors duration-500"></div>
+
+              <div className="relative z-10 flex items-center gap-4">
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-cyan-500 to-teal-600 flex items-center justify-center shadow-xl group-hover:shadow-2xl transition-shadow duration-500">
+                  <CheckCircle className="h-10 w-10 text-white" />
+                </div>
+
+                <div className="flex-1">
+                  <div className="flex items-baseline gap-2 mb-1">
+                    <p className="text-4xl font-bold text-cyan-900 dark:text-cyan-100 group-hover:text-cyan-800 dark:group-hover:text-cyan-200 transition-colors duration-300">
+                      {clearanceApplicantsLoading ? "..." : approvedClearanceApplicants.length}
+                    </p>
+                    <div className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse"></div>
+                  </div>
+                  <p className="text-cyan-700 dark:text-cyan-300 font-semibold text-base md:text-lg mb-1">
+                    Processed Applicants for the Mayor&apos;s Clearance
+                  </p>
+                  <p className="text-sm text-cyan-600/80 dark:text-cyan-400/80">
+                    Mayor&apos;s Clearance applicants marked approved or processed
+                  </p>
+                  <div className="mt-3 flex items-center gap-1">
+                    <div className="h-1 bg-cyan-200 dark:bg-cyan-800 rounded-full flex-1">
+                      <div
+                        className="h-1 bg-gradient-to-r from-cyan-500 to-teal-600 rounded-full transition-all duration-1000"
+                        style={{ width: clearanceApplicantsLoading ? "0%" : "100%" }}
+                      ></div>
                     </div>
                   </div>
                 </div>

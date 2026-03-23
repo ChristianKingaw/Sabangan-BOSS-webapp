@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react"
 import { realtimeDb, app } from "@/database/firebase"
 import { BUSINESS_APPLICATION_PATH, normalizeBusinessApplication } from "@/lib/business-applications"
 import { MAYORS_CLEARANCE_APPLICATION_PATH, normalizeClearanceApplicant, buildClearanceMessengerThreadId } from "@/lib/clearance-applications"
-import { ref, onValue, off } from "firebase/database"
+import { ref, onValue } from "firebase/database"
 import { getAuth, onAuthStateChanged } from "firebase/auth"
 import { Button } from "@/components/ui/button"
 import { X, ChevronDown } from "lucide-react"
@@ -316,12 +316,7 @@ export default function Messenger({
 
     return () => {
       mounted = false
-      try {
-        off(appsRef)
-      } catch {}
-      try {
-        off(clearanceRef)
-      } catch {}
+      // fix: 1 — clean up only this component's Firebase listeners
       try {
         if (typeof businessHandle === "function") businessHandle()
       } catch {}
@@ -417,12 +412,7 @@ export default function Messenger({
     })
 
     return () => {
-      try {
-        off(mainRef)
-      } catch {}
-      try {
-        off(reqRef)
-      } catch {}
+      // fix: 1 — clean up only this component's Firebase listeners
       try {
         if (typeof unsubMain === "function") unsubMain()
       } catch {}

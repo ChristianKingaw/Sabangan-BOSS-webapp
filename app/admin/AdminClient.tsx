@@ -41,6 +41,8 @@ type ManagedBusinessApplication = {
   applicationDate?: string | number | null
 }
 
+type ApplicationSource = ManagedBusinessApplication["source"]
+
 type UserFormState = {
   firstName: string
   middleName: string
@@ -62,8 +64,34 @@ const EMPTY_CREATE_FORM: UserFormState = {
 }
 
 const ROLE_LABELS: Record<ManagedRole, string> = {
-  staff: "Staff",
+  staff: "Mayor's Office",
   treasury: "Treasury",
+}
+
+const APPLICATION_SOURCE_LABELS: Record<ApplicationSource, string> = {
+  business: "Business",
+  mayors_clearance: "Mayor's Clearance",
+}
+
+const APPLICATION_SOURCE_BADGE_CLASS: Record<ApplicationSource, string> = {
+  business: "bg-blue-100 text-blue-800",
+  mayors_clearance: "bg-emerald-100 text-emerald-800",
+}
+
+const APPLICATION_SOURCE_DELETE_LABEL: Record<ApplicationSource, string> = {
+  business: "business applications",
+  mayors_clearance: "mayor's clearance applications",
+}
+
+const formatApplicationDate = (value?: string | number | null) => {
+  if (!value) return "—"
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return "—"
+  }
+
+  return parsed.toLocaleDateString()
 }
 
 export default function AdminClient() {
@@ -90,6 +118,28 @@ export default function AdminClient() {
 
   const isAuthed = Boolean(me)
   const activeUsers = usersByRole[activeRole] ?? []
+  const businessPermitApplications = useMemo(
+    () => businessApplications.filter((application) => application.source === "business"),
+    [businessApplications]
+  )
+  const mayorsClearanceApplications = useMemo(
+    () => businessApplications.filter((application) => application.source === "mayors_clearance"),
+    [businessApplications]
+  )
+  const selectedBusinessPermitCount = useMemo(
+    () => businessPermitApplications.filter((application) => selectedBusinessIds.has(application.key)).length,
+    [businessPermitApplications, selectedBusinessIds]
+  )
+  const selectedMayorsClearanceCount = useMemo(
+    () => mayorsClearanceApplications.filter((application) => selectedBusinessIds.has(application.key)).length,
+    [mayorsClearanceApplications, selectedBusinessIds]
+  )
+  const allBusinessPermitSelected =
+    businessPermitApplications.length > 0 &&
+    businessPermitApplications.every((application) => selectedBusinessIds.has(application.key))
+  const allMayorsClearanceSelected =
+    mayorsClearanceApplications.length > 0 &&
+    mayorsClearanceApplications.every((application) => selectedBusinessIds.has(application.key))
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -423,23 +473,34 @@ export default function AdminClient() {
     setSelectedIds(new Set(activeUsers.map((u) => u.id)))
   }
 
-  const deleteSelectedBusinessApplications = async () => {
-    if (selectedBusinessIds.size === 0) return
+  const deleteSelectedBusinessApplications = async (source: ApplicationSource) => {
+    const selectedApplications = businessApplications
+      .filter((application) => application.source === source && selectedBusinessIds.has(application.key))
+      .map((application) => ({
+        source: application.source,
+        id: application.id,
+        applicantUid: application.applicantUid ?? null,
+      }))
 
-    const confirmDelete = window.confirm("Delete selected applications?")
+    if (selectedApplications.length === 0) return
+
+    const confirmDelete = window.confirm(`Delete selected ${APPLICATION_SOURCE_DELETE_LABEL[source]}?`)
     if (!confirmDelete) return
 
     try {
-      const selectedApplications = businessApplications
-        .filter((application) => selectedBusinessIds.has(application.key))
-        .map((application) => ({
-          source: application.source,
-          id: application.id,
-          applicantUid: application.applicantUid ?? null,
-        }))
-
       await apiBusinessRequest("DELETE", { applications: selectedApplications })
-      setSelectedBusinessIds(new Set())
+
+      const deletedKeys = new Set(
+        businessApplications
+          .filter((application) => application.source === source && selectedBusinessIds.has(application.key))
+          .map((application) => application.key)
+      )
+      setSelectedBusinessIds((prev) => {
+        const next = new Set(prev)
+        deletedKeys.forEach((key) => next.delete(key))
+        return next
+      })
+
       await loadBusinessApplications()
       toast.success("Selected applications deleted")
     } catch (err) {
@@ -485,13 +546,22 @@ export default function AdminClient() {
     })
   }
 
-  const toggleSelectAllBusinessApplications = () => {
-    if (businessApplications.length === 0) return
-    if (selectedBusinessIds.size === businessApplications.length) {
-      setSelectedBusinessIds(new Set())
-      return
-    }
-    setSelectedBusinessIds(new Set(businessApplications.map((application) => application.key)))
+  const toggleSelectAllBusinessApplications = (source: ApplicationSource) => {
+    const sourceApplications = businessApplications.filter((application) => application.source === source)
+    if (sourceApplications.length === 0) return
+
+    const sourceKeys = sourceApplications.map((application) => application.key)
+    const allSelected = sourceKeys.every((key) => selectedBusinessIds.has(key))
+
+    setSelectedBusinessIds((prev) => {
+      const next = new Set(prev)
+      if (allSelected) {
+        sourceKeys.forEach((key) => next.delete(key))
+      } else {
+        sourceKeys.forEach((key) => next.add(key))
+      }
+      return next
+    })
   }
 
   if (authLoading) {
@@ -815,12 +885,12 @@ export default function AdminClient() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Applications ({businessApplications.length})</CardTitle>
+          <CardTitle>Business Applications ({businessPermitApplications.length})</CardTitle>
           <Button
             size="sm"
             variant="destructive"
-            onClick={deleteSelectedBusinessApplications}
-            disabled={selectedBusinessIds.size === 0 || businessLoading}
+            onClick={() => deleteSelectedBusinessApplications("business")}
+            disabled={selectedBusinessPermitCount === 0 || businessLoading}
           >
             Delete selected
           </Button>
@@ -833,8 +903,8 @@ export default function AdminClient() {
                   <input
                     type="checkbox"
                     className="h-4 w-4"
-                    checked={businessApplications.length > 0 && selectedBusinessIds.size === businessApplications.length}
-                    onChange={toggleSelectAllBusinessApplications}
+                    checked={allBusinessPermitSelected}
+                    onChange={() => toggleSelectAllBusinessApplications("business")}
                     aria-label="Select all business applications"
                   />
                 </TableHead>
@@ -849,7 +919,7 @@ export default function AdminClient() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {businessApplications.map((application) => (
+              {businessPermitApplications.map((application) => (
                 <TableRow key={application.key}>
                   <TableCell>
                     <input
@@ -861,14 +931,8 @@ export default function AdminClient() {
                     />
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      className={cn(
-                        application.source === "business"
-                          ? "bg-blue-100 text-blue-800"
-                          : "bg-emerald-100 text-emerald-800"
-                      )}
-                    >
-                      {application.source === "business" ? "Business" : "Mayor's Clearance"}
+                    <Badge className={cn(APPLICATION_SOURCE_BADGE_CLASS[application.source])}>
+                      {APPLICATION_SOURCE_LABELS[application.source]}
                     </Badge>
                   </TableCell>
                   <TableCell className="font-medium">{application.applicantName || "Unnamed Applicant"}</TableCell>
@@ -876,14 +940,7 @@ export default function AdminClient() {
                   <TableCell>{application.applicationType || "—"}</TableCell>
                   <TableCell>{application.purpose || "—"}</TableCell>
                   <TableCell>{application.status || "Pending"}</TableCell>
-                  <TableCell>
-                    {application.applicationDate
-                      ? (() => {
-                          const parsed = new Date(application.applicationDate as string | number)
-                          return Number.isNaN(parsed.getTime()) ? "—" : parsed.toLocaleDateString()
-                        })()
-                      : "—"}
-                  </TableCell>
+                  <TableCell>{formatApplicationDate(application.applicationDate)}</TableCell>
                   <TableCell>
                     <Button
                       size="sm"
@@ -896,10 +953,100 @@ export default function AdminClient() {
                 </TableRow>
               ))}
 
-              {!businessLoading && businessApplications.length === 0 && (
+              {!businessLoading && businessPermitApplications.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={9} className="text-center text-sm text-gray-500">
-                    No applications found.
+                    No business applications found.
+                  </TableCell>
+                </TableRow>
+              )}
+
+              {businessLoading && (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center text-sm text-gray-500">
+                    Loading applications...
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Mayor&apos;s Clearance Applications ({mayorsClearanceApplications.length})</CardTitle>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={() => deleteSelectedBusinessApplications("mayors_clearance")}
+            disabled={selectedMayorsClearanceCount === 0 || businessLoading}
+          >
+            Delete selected
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={allMayorsClearanceSelected}
+                    onChange={() => toggleSelectAllBusinessApplications("mayors_clearance")}
+                    aria-label="Select all mayor's clearance applications"
+                  />
+                </TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead>Applicant</TableHead>
+                <TableHead>Business</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Purpose</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Application Date</TableHead>
+                <TableHead className="w-24">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {mayorsClearanceApplications.map((application) => (
+                <TableRow key={application.key}>
+                  <TableCell>
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={selectedBusinessIds.has(application.key)}
+                      onChange={() => toggleSelectBusinessApplication(application.key)}
+                      aria-label={`Select application ${application.key}`}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Badge className={cn(APPLICATION_SOURCE_BADGE_CLASS[application.source])}>
+                      {APPLICATION_SOURCE_LABELS[application.source]}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="font-medium">{application.applicantName || "Unnamed Applicant"}</TableCell>
+                  <TableCell>{application.businessName || "—"}</TableCell>
+                  <TableCell>{application.applicationType || "—"}</TableCell>
+                  <TableCell>{application.purpose || "—"}</TableCell>
+                  <TableCell>{application.status || "Pending"}</TableCell>
+                  <TableCell>{formatApplicationDate(application.applicationDate)}</TableCell>
+                  <TableCell>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => deleteSingleApplication(application)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+
+              {!businessLoading && mayorsClearanceApplications.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center text-sm text-gray-500">
+                    No mayor&apos;s clearance applications found.
                   </TableCell>
                 </TableRow>
               )}
