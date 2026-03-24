@@ -1,10 +1,16 @@
 {
   "projects": {
-    "default": "sabangan-app"
+    "default": "sabangan-webapp-tourism"
   },
   "targets": {},
   "etags": {
     "sabangan-app": {
+      "extensionInstances": {}
+    },
+    "sabangan-webapp-tourism": {
+      "extensionInstances": {}
+    },
+    "sabangan-app-2094f": {
       "extensionInstances": {}
     }
   }

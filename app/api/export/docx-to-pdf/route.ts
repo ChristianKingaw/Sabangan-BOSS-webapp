@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { createHash } from "node:crypto"
+import { promises as fs } from "node:fs"
+import os from "node:os"
+import path from "node:path"
+import { spawn } from "node:child_process"
+import { pathToFileURL } from "node:url"
 import { adminAuth, adminDb } from "@/lib/firebase-admin"
 import { renderFromTemplateBuffer } from "@/lib/docx/renderFromTemplate"
 import { loadTemplateBuffer } from "@/lib/docx/loadTemplateBuffer"
@@ -28,6 +33,9 @@ const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingm
 const PREVIEW_CACHE_KEY_PREFIX = "preview:application-form-pdf:v1"
 const DEFAULT_PREVIEW_CACHE_TTL_SECONDS = 10 * 60
 const MAX_PREVIEW_CACHE_TTL_SECONDS = 24 * 60 * 60
+const LOCAL_SOFFICE_COMMANDS = process.platform === "win32"
+  ? ["soffice.com", "soffice.exe", "soffice"]
+  : ["soffice"]
 
 function getPreviewCacheTtlSeconds() {
   const raw = Number.parseInt(process.env.PREVIEW_FORM_CACHE_TTL_SECONDS ?? "", 10)
@@ -122,6 +130,96 @@ function getConverterEndpoints(requestOrigin: string): string[] {
   return [...new Set(candidates)]
 }
 
+function shouldTryLocalSofficeFallback(): boolean {
+  const flag = process.env.ENABLE_LOCAL_SOFFICE_FALLBACK
+  if (flag === "1" || flag === "true") return true
+  if (flag === "0" || flag === "false") return false
+
+  // Development convenience: if external converter is down, use local LibreOffice when available.
+  return process.env.NODE_ENV !== "production"
+}
+
+async function runSofficeOnce(command: string, docxPath: string, outDir: string, userProfileDir: string) {
+  let stderr = ""
+  const userInstallUrl = `${pathToFileURL(userProfileDir).href.replace(/\/?$/, "/")}`
+
+  await new Promise<void>((resolve, reject) => {
+    const args = [
+      "--headless",
+      "--nologo",
+      "--nofirststartwizard",
+      "--norestore",
+      `-env:UserInstallation=${userInstallUrl}`,
+      "--convert-to",
+      "pdf:writer_pdf_Export",
+      "--outdir",
+      outDir,
+      docxPath,
+    ]
+
+    const proc = spawn(command, args, {
+      stdio: ["ignore", "ignore", "pipe"],
+      env: {
+        ...process.env,
+        LANG: process.env.LANG || "en_US.UTF-8",
+        LC_ALL: process.env.LC_ALL || "en_US.UTF-8",
+      },
+    })
+
+    proc.stderr?.on("data", (chunk) => {
+      stderr += chunk.toString()
+    })
+
+    proc.on("error", (err) => {
+      reject(err)
+    })
+
+    proc.on("close", (code) => {
+      if (code === 0) {
+        resolve()
+        return
+      }
+      reject(new Error(`soffice exited with code ${code}${stderr ? `: ${stderr.trim()}` : ""}`))
+    })
+  })
+}
+
+async function convertDocxToPdfWithLocalSoffice(docxBuffer: Buffer): Promise<Buffer> {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "docx-local-"))
+  const inputPath = path.join(tempDir, "input.docx")
+  const outputPath = path.join(tempDir, "input.pdf")
+  const userProfileDir = path.join(tempDir, "lo-profile")
+  const errors: string[] = []
+
+  try {
+    await fs.writeFile(inputPath, docxBuffer)
+    await fs.mkdir(userProfileDir, { recursive: true })
+
+    for (const command of LOCAL_SOFFICE_COMMANDS) {
+      try {
+        await runSofficeOnce(command, inputPath, tempDir, userProfileDir)
+
+        // LibreOffice can occasionally return before the PDF is fully flushed.
+        for (let i = 0; i < 10; i++) {
+          try {
+            return await fs.readFile(outputPath)
+          } catch {
+            await new Promise((resolve) => setTimeout(resolve, 150))
+          }
+        }
+
+        throw new Error("PDF output was not created by LibreOffice")
+      } catch (error) {
+        errors.push(`${command} -> ${String(error)}`)
+      }
+    }
+
+    throw new Error(`Local soffice conversion failed. Errors: ${errors.join(" | ")}`)
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
 async function convertDocxToPdfBuffer(docxBuffer: Buffer, converterEndpoints: string[]): Promise<Buffer> {
   const errors: string[] = []
 
@@ -151,6 +249,14 @@ async function convertDocxToPdfBuffer(docxBuffer: Buffer, converterEndpoints: st
       return pdfBuffer
     } catch (err) {
       errors.push(`${endpoint} -> ${String(err)}`)
+    }
+  }
+
+  if (shouldTryLocalSofficeFallback()) {
+    try {
+      return await convertDocxToPdfWithLocalSoffice(docxBuffer)
+    } catch (err) {
+      errors.push(`local-soffice -> ${String(err)}`)
     }
   }
 

@@ -60,7 +60,7 @@ type RequirementDocumentItem = {
 
 // Firebase RTDB keys cannot include . # $ [ ] or /. Ensure string conversion first.
 const sanitizeKey = (value: unknown) => (String(value ?? "").replace(/[.#$\[\]/]/g, "-") || "-")
-// fix: 4 — scope notification read-state storage key by staff
+// fix: 4 — scope notification read-state storage key by Mayors Office user
 const getReadNotificationsStorageKey = (staffId: string) => `notifications_read:${staffId}`
 
 // Firebase REST API helper to bypass SDK cache issues (ChildrenNode.equals recursion)

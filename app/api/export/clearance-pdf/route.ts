@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
+import { createHash } from "node:crypto"
 import { spawn } from "node:child_process"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -14,6 +15,7 @@ import { BUSINESS_APPLICATION_PATH } from "@/lib/business-applications"
 import { mapClearanceToMergeFields } from "@/lib/export/mapClearanceToMergeFields"
 import { resolveFallbackClearanceDocumentNo } from "@/lib/export/resolveClearanceDocumentNo"
 import { fetchLatestTreasuryAssessmentByClientUid } from "@/lib/treasury-assessment"
+import { getRedisClient } from "@/lib/redis"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -21,6 +23,75 @@ export const revalidate = 0
 
 const TEMPLATE_PATH = "templates/mayors_clearance_2026.docx"
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+const CLEARANCE_CACHE_KEY_PREFIX = "preview:clearance-pdf:v1"
+const DEFAULT_CACHE_TTL_SECONDS = 10 * 60
+const MAX_CACHE_TTL_SECONDS = 24 * 60 * 60
+
+function getCacheTtlSeconds() {
+  const raw = Number.parseInt(process.env.CLEARANCE_PDF_CACHE_TTL_SECONDS ?? "", 10)
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return DEFAULT_CACHE_TTL_SECONDS
+  }
+  return Math.min(raw, MAX_CACHE_TTL_SECONDS)
+}
+
+function stableSerialize(value: unknown): string {
+  if (value === undefined) return "null"
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value)
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(",")}]`
+  }
+
+  const sortedEntries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))
+  const body = sortedEntries
+    .map(([key, nested]) => `${JSON.stringify(key)}:${stableSerialize(nested)}`)
+    .join(",")
+
+  return `{${body}}`
+}
+
+function buildClearanceCacheKey(
+  sourceApplicationId: string,
+  applicationClass: string | undefined,
+  targetPageNumber: number,
+  mergeFields: unknown
+): string {
+  const cacheVersion = process.env.CLEARANCE_PDF_CACHE_VERSION ?? "1"
+  const digest = createHash("sha256")
+    .update(
+      stableSerialize({
+        cacheVersion,
+        sourceApplicationId,
+        applicationClass,
+        targetPageNumber,
+        mergeFields,
+      })
+    )
+    .digest("hex")
+
+  return `${CLEARANCE_CACHE_KEY_PREFIX}:${sourceApplicationId}:${digest.slice(0, 16)}`
+}
+
+function buildPdfResponse(
+  pdfBuffer: Buffer,
+  baseName: string,
+  cacheStatus: "HIT" | "MISS" | "BYPASS"
+) {
+  return new NextResponse(new Uint8Array(pdfBuffer), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="${baseName}.pdf"`,
+      "Content-Length": String(pdfBuffer.length),
+      "Cache-Control": "private, no-store",
+      "X-Clearance-Cache": cacheStatus,
+    },
+  })
+}
 
 const ExportRequestSchema = z
   .object({
@@ -399,6 +470,38 @@ export async function POST(request: NextRequest) {
       : ""
     if (rankedNo) mergeFields.No = rankedNo
 
+    const targetPageNumber =
+      applicationClass === "mayors_clearance" ? 1 :
+      applicationClass === "corp_or_association" ? 2 :
+      applicationClass === "regular_business" ? 1 :
+      shouldUseSecondClearancePage(businessType) ? 2 : 1
+
+    const baseName = `${[name.firstName, name.lastName].filter(Boolean).join("_") || "Applicant"}_Mayors_Clearance`
+      .replace(/[^\w.-]+/g, "_")
+      .replace(/_+/g, "_")
+
+    const cacheKey = buildClearanceCacheKey(sourceApplicationId, applicationClass, targetPageNumber, mergeFields)
+    let redisClient = null as Awaited<ReturnType<typeof getRedisClient>> | null
+    try {
+      redisClient = await getRedisClient()
+    } catch (redisError) {
+      console.warn("Failed to initialize Redis for clearance-pdf cache. Continuing without cache.", redisError)
+    }
+
+    if (redisClient) {
+      try {
+        const cachedBase64 = await redisClient.get(cacheKey)
+        if (cachedBase64) {
+          const cachedBuffer = Buffer.from(cachedBase64, "base64")
+          if (cachedBuffer.length > 0) {
+            return buildPdfResponse(cachedBuffer, baseName, "HIT")
+          }
+        }
+      } catch (err) {
+        console.warn("Redis clearance-pdf cache read failed. Falling back to fresh render.", err)
+      }
+    }
+
     let docxBuffer: Buffer
     try {
       const publicOrigin = getRequestPublicOrigin(request)
@@ -432,25 +535,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const targetPageNumber =
-      applicationClass === "mayors_clearance" ? 1 :
-      applicationClass === "corp_or_association" ? 2 :
-      applicationClass === "regular_business" ? 1 :
-      shouldUseSecondClearancePage(businessType) ? 2 : 1
     pdfBuffer = await keepSinglePdfPage(pdfBuffer, targetPageNumber)
 
-    const baseName = `${[name.firstName, name.lastName].filter(Boolean).join("_") || "Applicant"}_Mayors_Clearance`
-      .replace(/[^\w.-]+/g, "_")
-      .replace(/_+/g, "_")
+    if (redisClient) {
+      try {
+        await redisClient.set(cacheKey, pdfBuffer.toString("base64"), {
+          EX: getCacheTtlSeconds(),
+        })
+      } catch (err) {
+        console.warn("Redis clearance-pdf cache write failed. Continuing without cache.", err)
+      }
+    }
 
-    return new NextResponse(new Uint8Array(pdfBuffer), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${baseName}.pdf"`,
-        "Content-Length": String(pdfBuffer.length),
-      },
-    })
+    return buildPdfResponse(pdfBuffer, baseName, redisClient ? "MISS" : "BYPASS")
   } catch (error) {
     console.error("clearance-pdf export error:", error)
     return NextResponse.json({ error: "Failed to generate Mayor's Clearance PDF" }, { status: 500 })

@@ -35,7 +35,7 @@ export async function createStaffRecord(data: {
   const newStaffRef = push(staffCollectionRef)
 
   if (!newStaffRef.key) {
-    throw new Error("Unable to create staff record. Please try again.")
+    throw new Error("Unable to create Mayors Office record. Please try again.")
   }
 
   const emailVerified = data.emailVerified ?? Boolean(data.createdByEmail)

@@ -516,24 +516,29 @@ const authenticatedNavItems: AuthenticatedNavItem[] = [
   { id: "home", label: "Home", icon: LayoutDashboard },
   { id: "clients", label: "Business Application", icon: FileText },
   { id: "clearance-applications", label: "Mayor's Clearance Application", icon: ClipboardList },
-  { id: "clearance-clients", label: "Mayor's Clearance", icon: Award },
+  { id: "clearance-clients", label: "Mayor's Clearance File", icon: Award },
   { id: "lgu-status", label: "LGU Status", icon: CalendarDays, href: "/lgu-status" },
 ]
 
-
+const MAYORS_OFFICE_EMAIL_STORAGE_KEY = "bossMayorsOfficeEmail"
+const LEGACY_STAFF_EMAIL_STORAGE_KEY = "bossStaffEmail"
 
 const getStoredEmail = () => {
   if (typeof window === "undefined") {
     return null
   }
   try {
-    return localStorage.getItem("bossStaffEmail")
+    const mayorsOfficeEmail = localStorage.getItem(MAYORS_OFFICE_EMAIL_STORAGE_KEY)
+    if (mayorsOfficeEmail) {
+      return mayorsOfficeEmail
+    }
+    return localStorage.getItem(LEGACY_STAFF_EMAIL_STORAGE_KEY)
   } catch {
     return null
   }
 }
 
-// fix: 4 — scope notification read-state storage key by staff
+// fix: 4 — scope notification read-state storage key by Mayors Office user
 const getReadNotificationsStorageKey = (staffId: string) => `notifications_read:${staffId}`
 
 async function hashPassword(value: string) {
@@ -838,7 +843,7 @@ export default function HomePage() {
       const clientId = event.clientId
       if (clientId) ids.add(clientId)
     })
-    // remove clients whose requirements were explicitly cleared by staff
+    // remove clients whose requirements were explicitly cleared by the Mayors Office
     clearedRequirementClientIds.forEach((c) => ids.delete(c))
     return ids
   }, [unreadNotifications, clearedRequirementClientIds])
@@ -1613,7 +1618,9 @@ export default function HomePage() {
           setLoggedInEmail(user.email ?? null)
           setCurrentStaffId(user.uid)
           if (typeof window !== "undefined" && user.email) {
-            localStorage.setItem("bossStaffEmail", user.email.toLowerCase())
+            const normalizedEmail = user.email.toLowerCase()
+            localStorage.setItem(MAYORS_OFFICE_EMAIL_STORAGE_KEY, normalizedEmail)
+            localStorage.removeItem(LEGACY_STAFF_EMAIL_STORAGE_KEY)
           }
           setCurrentPage((prev) => (prev === "login" ? "home" : prev))
         } else {
@@ -1621,7 +1628,8 @@ export default function HomePage() {
           setLoggedInEmail(null)
           setCurrentStaffId(null)
           if (typeof window !== "undefined") {
-            localStorage.removeItem("bossStaffEmail")
+            localStorage.removeItem(MAYORS_OFFICE_EMAIL_STORAGE_KEY)
+            localStorage.removeItem(LEGACY_STAFF_EMAIL_STORAGE_KEY)
           }
           setCurrentPage("login")
         }
@@ -2087,7 +2095,8 @@ export default function HomePage() {
       handlePageChange("home")
       setLoggedInEmail(normalizedEmail)
       if (typeof window !== "undefined") {
-        localStorage.setItem("bossStaffEmail", normalizedEmail)
+        localStorage.setItem(MAYORS_OFFICE_EMAIL_STORAGE_KEY, normalizedEmail)
+        localStorage.removeItem(LEGACY_STAFF_EMAIL_STORAGE_KEY)
       }
       setPassword("")
     } catch (error) {
@@ -2108,7 +2117,8 @@ export default function HomePage() {
     setPassword("")
     setLoggedInEmail(null)
     if (typeof window !== "undefined") {
-      localStorage.removeItem("bossStaffEmail")
+      localStorage.removeItem(MAYORS_OFFICE_EMAIL_STORAGE_KEY)
+      localStorage.removeItem(LEGACY_STAFF_EMAIL_STORAGE_KEY)
     }
   }
 
@@ -3091,7 +3101,7 @@ export default function HomePage() {
 
     return renderWithSidebar(
       <>
-        <main className="flex-1 p-6 mt-28 max-w-4xl w-full relative">
+        <main className="flex-1 p-4 md:p-5 mt-20 md:mt-24 max-w-4xl w-full relative">
           {/* Background decorative elements */}
           <div className="absolute inset-0 overflow-hidden pointer-events-none">
             <div className="absolute -top-10 -right-10 w-32 h-32 bg-primary/5 rounded-full blur-3xl"></div>
@@ -3099,15 +3109,15 @@ export default function HomePage() {
             <div className="absolute -bottom-10 right-1/4 w-20 h-20 bg-green-500/5 rounded-full blur-xl"></div>
           </div>
 
-          <div className="flex flex-col items-center mb-16 relative z-10">
+          <div className="flex flex-col items-center mb-8 md:mb-10 relative z-10">
             {/* Animated background glow */}
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-64 h-64 bg-gradient-to-r from-primary/20 via-blue-500/10 to-primary/20 rounded-full blur-3xl animate-pulse"></div>
+              <div className="w-44 h-44 md:w-52 md:h-52 bg-gradient-to-r from-primary/20 via-blue-500/10 to-primary/20 rounded-full blur-3xl animate-pulse"></div>
             </div>
 
             {/* Welcome text with gradient effect */}
             <div className="text-center mb-6 relative">
-              <h1 className="text-5xl md:text-6xl font-black text-foreground mb-3 tracking-tight">
+              <h1 className="text-3xl md:text-4xl font-black text-foreground mb-2 tracking-tight">
                 Welcome to BOSS
               </h1>
               <div className="h-1 w-24 bg-gradient-to-r from-transparent via-primary to-transparent mx-auto rounded-full"></div>
@@ -3115,7 +3125,7 @@ export default function HomePage() {
 
             {/* Subtitle with elegant styling */}
             <div className="relative">
-              <p className="text-xl md:text-2xl font-semibold text-muted-foreground/90 tracking-wide relative z-10 px-6 py-2 rounded-full bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm border border-white/20 dark:border-gray-700/20 shadow-lg">
+              <p className="text-base md:text-lg font-semibold text-muted-foreground/90 tracking-wide relative z-10 px-4 py-1.5 rounded-full bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm border border-white/20 dark:border-gray-700/20 shadow-lg">
                 Business One Stop Shop
               </p>
               {/* Subtle shadow effect */}
@@ -3123,35 +3133,35 @@ export default function HomePage() {
             </div>
 
             {/* Decorative elements */}
-            <div className="flex items-center gap-4 mt-8">
-              <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0s'}}></div>
-              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-              <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.4s'}}></div>
+            <div className="flex items-center gap-3 mt-5">
+              <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{animationDelay: '0s'}}></div>
+              <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+              <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.4s'}}></div>
             </div>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 relative z-10 max-w-5xl mx-auto">
-            <div className="group relative overflow-hidden bg-gradient-to-br from-blue-50 via-blue-100 to-indigo-100 dark:from-blue-950/50 dark:via-blue-900/50 dark:to-indigo-900/50 border border-blue-200/50 dark:border-blue-800/50 rounded-2xl p-6 shadow-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5 relative z-10 max-w-5xl mx-auto">
+            <div className="group relative overflow-hidden bg-gradient-to-br from-blue-50 via-blue-100 to-indigo-100 dark:from-blue-950/50 dark:via-blue-900/50 dark:to-indigo-900/50 border border-blue-200/50 dark:border-blue-800/50 rounded-2xl p-4 md:p-5 shadow-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
               <div className="absolute inset-0 bg-gradient-to-br from-blue-400/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
               <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full -translate-y-16 translate-x-16 blur-2xl group-hover:bg-blue-500/20 transition-colors duration-500"></div>
 
-              <div className="relative z-10 flex items-center gap-4">
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-xl group-hover:shadow-2xl transition-shadow duration-500">
-                  <FileText className="h-10 w-10 text-white" />
+              <div className="relative z-10 flex items-center gap-3">
+                <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-xl group-hover:shadow-2xl transition-shadow duration-500">
+                  <FileText className="h-7 w-7 md:h-8 md:w-8 text-white" />
                 </div>
 
                 <div className="flex-1">
                   <div className="flex items-baseline gap-2 mb-1">
-                    <p className="text-4xl font-bold text-blue-900 dark:text-blue-100 group-hover:text-blue-800 dark:group-hover:text-blue-200 transition-colors duration-300">
+                    <p className="text-3xl md:text-4xl font-bold text-blue-900 dark:text-blue-100 group-hover:text-blue-800 dark:group-hover:text-blue-200 transition-colors duration-300">
                       {clientsLoading ? "..." : clients.length}
                     </p>
                     <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
                   </div>
-                  <p className="text-blue-700 dark:text-blue-300 font-semibold text-base md:text-lg mb-1">
+                  <p className="text-blue-700 dark:text-blue-300 font-semibold text-sm md:text-base mb-1">
                     Total Registrants for the Business Application
                   </p>
-                  <p className="text-sm text-blue-600/80 dark:text-blue-400/80">All submitted business applications</p>
-                  <div className="mt-3 flex items-center gap-1">
+                  <p className="text-xs md:text-sm text-blue-600/80 dark:text-blue-400/80">All submitted business applications</p>
+                  <div className="mt-2 flex items-center gap-1">
                     <div className="h-1 bg-blue-200 dark:bg-blue-800 rounded-full flex-1">
                       <div
                         className="h-1 bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-1000"
@@ -3163,25 +3173,25 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="group relative overflow-hidden bg-gradient-to-br from-emerald-50 via-green-100 to-teal-100 dark:from-emerald-950/50 dark:via-green-900/50 dark:to-teal-900/50 border border-emerald-200/50 dark:border-emerald-800/50 rounded-2xl p-6 shadow-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
+            <div className="group relative overflow-hidden bg-gradient-to-br from-emerald-50 via-green-100 to-teal-100 dark:from-emerald-950/50 dark:via-green-900/50 dark:to-teal-900/50 border border-emerald-200/50 dark:border-emerald-800/50 rounded-2xl p-4 md:p-5 shadow-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
               <div className="absolute inset-0 bg-gradient-to-br from-emerald-400/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
               <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full -translate-y-16 translate-x-16 blur-2xl group-hover:bg-emerald-500/20 transition-colors duration-500"></div>
 
-              <div className="relative z-10 flex items-center gap-4">
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center shadow-xl group-hover:shadow-2xl transition-shadow duration-500">
-                  <Check className="h-10 w-10 text-white" />
+              <div className="relative z-10 flex items-center gap-3">
+                <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center shadow-xl group-hover:shadow-2xl transition-shadow duration-500">
+                  <Check className="h-7 w-7 md:h-8 md:w-8 text-white" />
                 </div>
 
                 <div className="flex-1">
                   <div className="flex items-baseline gap-2 mb-1">
-                    <p className="text-4xl font-bold text-emerald-900 dark:text-emerald-100 group-hover:text-emerald-800 dark:group-hover:text-emerald-200 transition-colors duration-300">
+                    <p className="text-3xl md:text-4xl font-bold text-emerald-900 dark:text-emerald-100 group-hover:text-emerald-800 dark:group-hover:text-emerald-200 transition-colors duration-300">
                       {clientsLoading ? "..." : approvedClients.length}
                     </p>
                     <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
                   </div>
-                  <p className="text-emerald-700 dark:text-emerald-300 font-semibold text-base md:text-lg mb-1">Processed Applications</p>
-                  <p className="text-sm text-emerald-600/80 dark:text-emerald-400/80">Business applications marked approved or processed</p>
-                  <div className="mt-3 flex items-center gap-1">
+                  <p className="text-emerald-700 dark:text-emerald-300 font-semibold text-sm md:text-base mb-1">Processed Applications</p>
+                  <p className="text-xs md:text-sm text-emerald-600/80 dark:text-emerald-400/80">Business applications marked approved or processed</p>
+                  <div className="mt-2 flex items-center gap-1">
                     <div className="h-1 bg-emerald-200 dark:bg-emerald-800 rounded-full flex-1">
                       <div
                         className="h-1 bg-gradient-to-r from-emerald-500 to-green-600 rounded-full transition-all duration-1000"
@@ -3193,27 +3203,27 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="group relative overflow-hidden bg-gradient-to-br from-amber-50 via-yellow-100 to-orange-100 dark:from-amber-950/50 dark:via-yellow-900/50 dark:to-orange-900/50 border border-amber-200/50 dark:border-amber-800/50 rounded-2xl p-6 shadow-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
+            <div className="group relative overflow-hidden bg-gradient-to-br from-amber-50 via-yellow-100 to-orange-100 dark:from-amber-950/50 dark:via-yellow-900/50 dark:to-orange-900/50 border border-amber-200/50 dark:border-amber-800/50 rounded-2xl p-4 md:p-5 shadow-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
               <div className="absolute inset-0 bg-gradient-to-br from-amber-400/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
               <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full -translate-y-16 translate-x-16 blur-2xl group-hover:bg-amber-500/20 transition-colors duration-500"></div>
 
-              <div className="relative z-10 flex items-center gap-4">
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-xl group-hover:shadow-2xl transition-shadow duration-500">
-                  <Award className="h-10 w-10 text-white" />
+              <div className="relative z-10 flex items-center gap-3">
+                <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-xl group-hover:shadow-2xl transition-shadow duration-500">
+                  <Award className="h-7 w-7 md:h-8 md:w-8 text-white" />
                 </div>
 
                 <div className="flex-1">
                   <div className="flex items-baseline gap-2 mb-1">
-                    <p className="text-4xl font-bold text-amber-900 dark:text-amber-100 group-hover:text-amber-800 dark:group-hover:text-amber-200 transition-colors duration-300">
+                    <p className="text-3xl md:text-4xl font-bold text-amber-900 dark:text-amber-100 group-hover:text-amber-800 dark:group-hover:text-amber-200 transition-colors duration-300">
                       {clearanceApplicantsLoading ? "..." : clearanceApplicants.length}
                     </p>
                     <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></div>
                   </div>
-                  <p className="text-amber-700 dark:text-amber-300 font-semibold text-base md:text-lg mb-1">
+                  <p className="text-amber-700 dark:text-amber-300 font-semibold text-sm md:text-base mb-1">
                     Total Registrants for the Mayor&apos;s Clearance
                   </p>
-                  <p className="text-sm text-amber-600/80 dark:text-amber-400/80">All submitted Mayor&apos;s Clearance applications</p>
-                  <div className="mt-3 flex items-center gap-1">
+                  <p className="text-xs md:text-sm text-amber-600/80 dark:text-amber-400/80">All submitted Mayor&apos;s Clearance applications</p>
+                  <div className="mt-2 flex items-center gap-1">
                     <div className="h-1 bg-amber-200 dark:bg-amber-800 rounded-full flex-1">
                       <div
                         className="h-1 bg-gradient-to-r from-amber-500 to-orange-600 rounded-full transition-all duration-1000"
@@ -3225,29 +3235,29 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="group relative overflow-hidden bg-gradient-to-br from-cyan-50 via-sky-100 to-teal-100 dark:from-cyan-950/50 dark:via-sky-900/50 dark:to-teal-900/50 border border-cyan-200/50 dark:border-cyan-800/50 rounded-2xl p-6 shadow-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
+            <div className="group relative overflow-hidden bg-gradient-to-br from-cyan-50 via-sky-100 to-teal-100 dark:from-cyan-950/50 dark:via-sky-900/50 dark:to-teal-900/50 border border-cyan-200/50 dark:border-cyan-800/50 rounded-2xl p-4 md:p-5 shadow-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
               <div className="absolute inset-0 bg-gradient-to-br from-cyan-400/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
               <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full -translate-y-16 translate-x-16 blur-2xl group-hover:bg-cyan-500/20 transition-colors duration-500"></div>
 
-              <div className="relative z-10 flex items-center gap-4">
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-cyan-500 to-teal-600 flex items-center justify-center shadow-xl group-hover:shadow-2xl transition-shadow duration-500">
-                  <CheckCircle className="h-10 w-10 text-white" />
+              <div className="relative z-10 flex items-center gap-3">
+                <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-gradient-to-br from-cyan-500 to-teal-600 flex items-center justify-center shadow-xl group-hover:shadow-2xl transition-shadow duration-500">
+                  <CheckCircle className="h-7 w-7 md:h-8 md:w-8 text-white" />
                 </div>
 
                 <div className="flex-1">
                   <div className="flex items-baseline gap-2 mb-1">
-                    <p className="text-4xl font-bold text-cyan-900 dark:text-cyan-100 group-hover:text-cyan-800 dark:group-hover:text-cyan-200 transition-colors duration-300">
+                    <p className="text-3xl md:text-4xl font-bold text-cyan-900 dark:text-cyan-100 group-hover:text-cyan-800 dark:group-hover:text-cyan-200 transition-colors duration-300">
                       {clearanceApplicantsLoading ? "..." : approvedClearanceApplicants.length}
                     </p>
                     <div className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse"></div>
                   </div>
-                  <p className="text-cyan-700 dark:text-cyan-300 font-semibold text-base md:text-lg mb-1">
+                  <p className="text-cyan-700 dark:text-cyan-300 font-semibold text-sm md:text-base mb-1">
                     Processed Applicants for the Mayor&apos;s Clearance
                   </p>
-                  <p className="text-sm text-cyan-600/80 dark:text-cyan-400/80">
+                  <p className="text-xs md:text-sm text-cyan-600/80 dark:text-cyan-400/80">
                     Mayor&apos;s Clearance applicants marked approved or processed
                   </p>
-                  <div className="mt-3 flex items-center gap-1">
+                  <div className="mt-2 flex items-center gap-1">
                     <div className="h-1 bg-cyan-200 dark:bg-cyan-800 rounded-full flex-1">
                       <div
                         className="h-1 bg-gradient-to-r from-cyan-500 to-teal-600 rounded-full transition-all duration-1000"
@@ -4256,7 +4266,7 @@ export default function HomePage() {
                 </div>
                 <div>
                   <h1 className="text-2xl font-semibold text-foreground">Sign in to BOSS</h1>
-                  <p className="text-sm text-muted-foreground">Use your staff account to continue</p>
+                  <p className="text-sm text-muted-foreground">Use your Mayors Office account to continue</p>
                 </div>
               </div>
 
@@ -4269,7 +4279,7 @@ export default function HomePage() {
                     id="email"
                     type="email"
                     autoComplete="email"
-                    placeholder="staff@municipality.gov"
+                    placeholder="mayorsoffice@municipality.gov"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="mt-1"

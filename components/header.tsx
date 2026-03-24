@@ -86,7 +86,7 @@ export default function Header({ title, showLogout, onLogout, showBack, onBack, 
             {isTall && (
               <div className="flex flex-wrap items-center gap-2 text-[12px] text-white/85">
                 <span className="rounded-full border border-[#e67e22] bg-[#e67e22] text-white px-3 py-1 uppercase tracking-[0.08em] backdrop-blur-sm shadow-sm">
-                  Staff portal access
+                  Mayors Office portal access
                 </span>
                 <span className="rounded-full border border-[#e67e22] bg-[#e67e22] text-white px-3 py-1 uppercase tracking-[0.08em]">
                   Sabangan, Mountain Province

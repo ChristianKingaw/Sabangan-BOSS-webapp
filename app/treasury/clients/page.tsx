@@ -31,6 +31,20 @@ import { toast } from "sonner"
 type SaveFeedback = { type: "success" | "error"; message: string }
 type FeeLineInput = { amount: string; penalty: string }
 type AdditionalFeeInput = { id: string; name: string; amount: string; penalty: string }
+type MobileFeeBreakdownLine = { label: string; amount: number }
+type MobileCalculatedFeeReference = {
+  applicationUid: string
+  basisType: string
+  basisTotal: number | null
+  estimatedTotal: number | null
+  status: string
+  sourcePath: string
+  sourceLabel: string
+  computedAt: number | null
+  breakdown: MobileFeeBreakdownLine[]
+}
+
+const ESTIMATED_FEES_PATH = "estimated_fees"
 
 const FEE_DEFINITIONS = [
   { key: "gross_sales_tax", label: "Gross Sales Tax", section: "local", includeInLgu: true },
@@ -123,6 +137,175 @@ const FEE_ROW_INDEX_BY_KEY = FEE_DEFINITIONS.reduce((accumulator, item, index) =
   return accumulator
 }, {} as Record<FeeKey, number>)
 
+const ESTIMATED_TREASURY_FEE_LABELS: Record<string, string> = {
+  mayors_permit: "Mayor's Permit",
+  mayors_clearance: "Mayor's Clearance",
+  sanitary_permit: "Sanitary Permit",
+  weights_and_measure: "Weights and Measure",
+  subscription_fee: "Subscription Fee",
+  dst: "D.S.T.",
+  zoning: "Zoning",
+  others_total: "Others",
+}
+
+const normalizeOptionalStringValue = (value: unknown) =>
+  typeof value === "string" ? value.trim() : ""
+
+const normalizeOptionalNumberValue = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (typeof value !== "string") return null
+  const parsed = Number(value.replace(/,/g, "").trim())
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+const normalizeBreakdownNode = (value: unknown): MobileFeeBreakdownLine[] => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return []
+
+  return Object.entries(value as Record<string, unknown>)
+    .map(([label, rawAmount]) => {
+      const amount = normalizeOptionalNumberValue(rawAmount)
+      if (amount === null) return null
+      const normalizedLabel = normalizeOptionalStringValue(label)
+      return {
+        label: normalizedLabel || "Fee",
+        amount,
+      } satisfies MobileFeeBreakdownLine
+    })
+    .filter((entry): entry is MobileFeeBreakdownLine => entry !== null)
+}
+
+const normalizeOtherEstimatedBreakdown = (value: unknown): MobileFeeBreakdownLine[] => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return []
+
+  return Object.entries(value as Record<string, unknown>)
+    .map(([name, rawAmount]) => {
+      const amount = normalizeOptionalNumberValue(rawAmount)
+      if (amount === null) return null
+      const normalizedName = normalizeOptionalStringValue(name)
+        .replace(/[_-]+/g, " ")
+        .replace(/\s+/g, " ")
+      const label = normalizedName ? `Other - ${normalizedName}` : "Other"
+      return { label, amount } satisfies MobileFeeBreakdownLine
+    })
+    .filter((entry): entry is MobileFeeBreakdownLine => entry !== null)
+}
+
+const normalizeEstimatedFeesBreakdown = (value: unknown): MobileFeeBreakdownLine[] => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return []
+  const node = value as Record<string, unknown>
+  const detailedOthers = normalizeOtherEstimatedBreakdown(node.others)
+  const rows: MobileFeeBreakdownLine[] = []
+
+  Object.entries(ESTIMATED_TREASURY_FEE_LABELS).forEach(([key, label]) => {
+    if (key === "others_total" && detailedOthers.length > 0) {
+      return
+    }
+
+    const amount = normalizeOptionalNumberValue(node[key])
+    if (amount === null) return
+
+    rows.push({ label, amount })
+  })
+
+  rows.push(...detailedOthers)
+  return rows
+}
+
+const normalizeEstimatedFeeReference = (
+  appId: string,
+  payload: Record<string, unknown>
+): MobileCalculatedFeeReference | null => {
+  const estimatedTreasuryFeesRaw = payload.estimated_treasury_fees
+  const estimatedTreasuryFeesNode =
+    estimatedTreasuryFeesRaw && typeof estimatedTreasuryFeesRaw === "object" && !Array.isArray(estimatedTreasuryFeesRaw)
+      ? (estimatedTreasuryFeesRaw as Record<string, unknown>)
+      : {}
+
+  const applicationUid = normalizeOptionalStringValue(payload.application_uid) || appId.trim()
+  if (!applicationUid) return null
+
+  const breakdown = normalizeEstimatedFeesBreakdown(estimatedTreasuryFeesNode)
+  const estimatedTotal =
+    normalizeOptionalNumberValue(estimatedTreasuryFeesNode.estimated_total) ??
+    normalizeOptionalNumberValue(payload.estimated_treasury_fees_total)
+  const basisTotal =
+    normalizeOptionalNumberValue(payload.basis_total) ??
+    normalizeOptionalNumberValue(payload.gross_total) ??
+    normalizeOptionalNumberValue(payload.capital_total)
+  const computedAt =
+    normalizeOptionalNumberValue(payload.updatedAt) ??
+    normalizeOptionalNumberValue(payload.submittedAt) ??
+    normalizeOptionalNumberValue(payload.createdAt)
+
+  if (estimatedTotal === null && basisTotal === null && breakdown.length === 0) {
+    return null
+  }
+
+  return {
+    applicationUid,
+    basisType: normalizeOptionalStringValue(payload.basis_type) || "Not specified",
+    basisTotal,
+    estimatedTotal,
+    status: normalizeOptionalStringValue(payload.status),
+    sourcePath: normalizeOptionalStringValue(payload.source_path) || `${ESTIMATED_FEES_PATH}/${applicationUid}`,
+    sourceLabel: `${ESTIMATED_FEES_PATH}/${applicationUid}`,
+    computedAt,
+    breakdown,
+  }
+}
+
+const normalizeLegacyBusinessFeeReference = (
+  appId: string,
+  payload: Record<string, unknown>
+): MobileCalculatedFeeReference | null => {
+  const feesRaw = payload.fees
+  if (!feesRaw || typeof feesRaw !== "object" || Array.isArray(feesRaw)) {
+    return null
+  }
+
+  const feesNode = feesRaw as Record<string, unknown>
+  const inputsRaw = feesNode.inputs
+  const inputsNode =
+    inputsRaw && typeof inputsRaw === "object" && !Array.isArray(inputsRaw)
+      ? (inputsRaw as Record<string, unknown>)
+      : {}
+  const metaRaw = payload.meta
+  const metaNode =
+    metaRaw && typeof metaRaw === "object" && !Array.isArray(metaRaw)
+      ? (metaRaw as Record<string, unknown>)
+      : {}
+  const breakdown = normalizeBreakdownNode(feesNode.breakdown)
+  const estimatedTotal = normalizeOptionalNumberValue(feesNode.total)
+  const basisTotal =
+    normalizeOptionalNumberValue(inputsNode.basisTotal) ??
+    normalizeOptionalNumberValue(inputsNode.taxBasisTotal) ??
+    normalizeOptionalNumberValue(inputsNode.grossTotal) ??
+    normalizeOptionalNumberValue(inputsNode.capitalTotal)
+  const computedAt =
+    normalizeOptionalNumberValue(feesNode.computedAt) ??
+    normalizeOptionalNumberValue(metaNode.feesComputedAt) ??
+    normalizeOptionalNumberValue(metaNode.updatedAt)
+
+  if (estimatedTotal === null && basisTotal === null && breakdown.length === 0) {
+    return null
+  }
+
+  return {
+    applicationUid: appId,
+    basisType:
+      normalizeOptionalStringValue(inputsNode.basisLabel) ||
+      normalizeOptionalStringValue(inputsNode.basis_type) ||
+      "Not specified",
+    basisTotal,
+    estimatedTotal,
+    status: normalizeOptionalStringValue(metaNode.status) || normalizeOptionalStringValue(payload.status),
+    sourcePath: `business/business_application/${appId}/fees`,
+    sourceLabel: `business/business_application/${appId}/fees`,
+    computedAt,
+    breakdown,
+  }
+}
+
 const createEmptyFeeInputs = (): Record<FeeKey, FeeLineInput> =>
   FEE_DEFINITIONS.reduce((accumulator, item) => {
     accumulator[item.key] = { amount: "", penalty: "" }
@@ -169,6 +352,13 @@ const formatCurrency = (value: number) =>
 const formatNumberCell = (value: string) => {
   const parsed = parseOptionalNumber(value)
   return parsed === null ? "-" : formatCurrency(parsed)
+}
+
+const formatDateTimeCell = (value: number | null) => {
+  if (value === null) return "-"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "-"
+  return date.toLocaleString()
 }
 
 const hasAnyAssessmentValue = (value: ClientAssessmentInputs) => {
@@ -269,6 +459,19 @@ const mapRecordToInputs = (record: TreasuryFeeAssessmentRecord | undefined): Cli
 }
 
 const getApplicationUid = (record: BusinessApplicationRecord) => record.id
+const getApplicationDateTimestamp = (record: BusinessApplicationRecord) => {
+  if (!record.applicationDate) return null
+  const date = new Date(record.applicationDate)
+  const timestamp = date.getTime()
+  return Number.isNaN(timestamp) ? null : timestamp
+}
+const getApplicationYear = (record: BusinessApplicationRecord) => {
+  const timestamp = getApplicationDateTimestamp(record)
+  if (timestamp === null) return null
+  return new Date(timestamp).getFullYear()
+}
+const getSortTimestamp = (record: BusinessApplicationRecord) =>
+  getApplicationDateTimestamp(record) ?? record.submittedAt ?? 0
 
 const normalizeNameToken = (value: unknown) =>
   String(value ?? "")
@@ -518,6 +721,7 @@ export default function TreasuryClientsPage() {
   const [clientsLoading, setClientsLoading] = useState(true)
   const [clientsError, setClientsError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
+  const [selectedYear, setSelectedYear] = useState("all")
   const [feesByClient, setFeesByClient] = useState<Record<string, TreasuryFeeAssessmentRecord>>({})
   const [inputsByClient, setInputsByClient] = useState<Record<string, ClientAssessmentInputs>>({})
   const [savingClientUid, setSavingClientUid] = useState<string | null>(null)
@@ -525,6 +729,12 @@ export default function TreasuryClientsPage() {
   const [editorValues, setEditorValues] = useState<ClientAssessmentInputs>(createEmptyAssessmentInputs)
   const [isDialogEditing, setIsDialogEditing] = useState(false)
   const [dialogFeedback, setDialogFeedback] = useState<SaveFeedback | null>(null)
+  const [estimatedFeesByApplication, setEstimatedFeesByApplication] = useState<
+    Record<string, MobileCalculatedFeeReference>
+  >({})
+  const [legacyMobileFeesByApplication, setLegacyMobileFeesByApplication] = useState<
+    Record<string, MobileCalculatedFeeReference>
+  >({})
 
   const selectedApplicationUid = selectedClient ? getApplicationUid(selectedClient) : null
   const dialogIsSaving = selectedApplicationUid ? savingClientUid === selectedApplicationUid : false
@@ -611,6 +821,35 @@ export default function TreasuryClientsPage() {
       editorValues.additionalFees.some((fee) => Boolean(fee.amount.trim() || fee.penalty.trim())),
     [editorValues.fees, editorValues.additionalFees]
   )
+  const selectedMobileFeeReference = useMemo(() => {
+    if (!selectedClient) return null
+
+    const selectedApplicationUid = getApplicationUid(selectedClient)
+    const selectedGroup = applicantGroupsByApplication[selectedApplicationUid]
+    const candidateApplicationUids = selectedGroup?.applicationUids ?? [selectedApplicationUid]
+    const references = candidateApplicationUids
+      .map((applicationUid) => {
+        return (
+          estimatedFeesByApplication[applicationUid] ??
+          legacyMobileFeesByApplication[applicationUid] ??
+          null
+        )
+      })
+      .filter((entry): entry is MobileCalculatedFeeReference => entry !== null)
+
+    if (references.length === 0) {
+      return null
+    }
+
+    return [...references].sort(
+      (left, right) => (right.computedAt ?? 0) - (left.computedAt ?? 0)
+    )[0]
+  }, [
+    selectedClient,
+    applicantGroupsByApplication,
+    estimatedFeesByApplication,
+    legacyMobileFeesByApplication,
+  ])
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -627,6 +866,7 @@ export default function TreasuryClientsPage() {
     }
     if (!authUser) {
       setClients([])
+      setLegacyMobileFeesByApplication({})
       setClientsError("Treasury session expired. Please sign in again.")
       setClientsLoading(false)
       return
@@ -641,21 +881,35 @@ export default function TreasuryClientsPage() {
       (snapshot) => {
         if (!snapshot.exists()) {
           setClients([])
+          setLegacyMobileFeesByApplication({})
           setClientsLoading(false)
           return
         }
 
         const node = snapshot.val() as Record<string, Record<string, any>>
+        const legacyByApplication: Record<string, MobileCalculatedFeeReference> = {}
+
+        Object.entries(node).forEach(([applicationUid, payload]) => {
+          const normalizedLegacy = normalizeLegacyBusinessFeeReference(
+            applicationUid,
+            payload as Record<string, unknown>
+          )
+          if (normalizedLegacy) {
+            legacyByApplication[applicationUid] = normalizedLegacy
+          }
+        })
+
         const parsed = Object.entries(node).map(([id, payload]) => normalizeBusinessApplication(id, payload))
         const submitted = parsed.filter((record) => Boolean(record.form) && Object.keys(record.form ?? {}).length > 0)
-        submitted.sort((a, b) => (a.submittedAt ?? 0) - (b.submittedAt ?? 0))
 
+        setLegacyMobileFeesByApplication(legacyByApplication)
         setClients(submitted)
         setClientsLoading(false)
       },
       (error) => {
         console.error("Failed to load treasury clients", error)
         setClients([])
+        setLegacyMobileFeesByApplication({})
         setClientsError("Unable to load client records right now.")
         setClientsLoading(false)
       }
@@ -679,6 +933,82 @@ export default function TreasuryClientsPage() {
   }, [authReady, authUser])
 
   useEffect(() => {
+    if (!authReady || !authUser) {
+      setEstimatedFeesByApplication({})
+      return
+    }
+
+    let cancelled = false
+
+    const loadEstimatedFees = async () => {
+      try {
+        const liveUser = auth.currentUser
+        if (!liveUser) {
+          if (!cancelled) setEstimatedFeesByApplication({})
+          return
+        }
+
+        const authIdToken = await liveUser.getIdToken()
+        const response = await fetch("/api/treasury/mobile-estimated-fees", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${authIdToken}`,
+          },
+          cache: "no-store",
+        })
+
+        let body: Record<string, unknown> = {}
+        try {
+          body = (await response.json()) as Record<string, unknown>
+        } catch {
+          body = {}
+        }
+
+        if (!response.ok) {
+          throw new Error(
+            String(
+              body.error ?? "Unable to load mobile-calculated estimated fees."
+            )
+          )
+        }
+
+        const node = (body.records ?? {}) as Record<
+          string,
+          Record<string, unknown>
+        >
+        const byApplication: Record<string, MobileCalculatedFeeReference> = {}
+
+        Object.entries(node).forEach(([applicationUid, payload]) => {
+          const normalized = normalizeEstimatedFeeReference(
+            applicationUid,
+            payload
+          )
+          if (!normalized) return
+          byApplication[normalized.applicationUid] = normalized
+        })
+
+        if (!cancelled) {
+          setEstimatedFeesByApplication(byApplication)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setEstimatedFeesByApplication({})
+        }
+        console.warn(
+          "Mobile-calculated estimated fees are unavailable for this treasury session.",
+          error
+        )
+      }
+    }
+
+    void loadEstimatedFees()
+
+    return () => {
+      cancelled = true
+    }
+  }, [auth, authReady, authUser])
+
+  useEffect(() => {
     setInputsByClient(() => {
       const next: Record<string, ClientAssessmentInputs> = {}
       clients.forEach((client) => {
@@ -689,16 +1019,39 @@ export default function TreasuryClientsPage() {
     })
   }, [clients, feesByClient])
 
+  const availableYears = useMemo(() => {
+    const years = new Set<number>()
+    clients.forEach((client) => {
+      const year = getApplicationYear(client)
+      if (year !== null) years.add(year)
+    })
+    return [...years].sort((left, right) => right - left)
+  }, [clients])
+
   const filteredClients = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase()
-    if (!normalizedSearch) return clients
+    const selectedYearValue = selectedYear === "all" ? null : Number(selectedYear)
 
-    return clients.filter((client) => {
-      const fullName = (client.applicantName ?? "").toLowerCase()
-      const businessName = (client.businessName ?? "").toLowerCase()
-      return fullName.includes(normalizedSearch) || businessName.includes(normalizedSearch)
-    })
-  }, [clients, searchQuery])
+    return clients
+      .filter((client) => {
+        const fullName = (client.applicantName ?? "").toLowerCase()
+        const businessName = (client.businessName ?? "").toLowerCase()
+        const matchesSearch =
+          !normalizedSearch ||
+          fullName.includes(normalizedSearch) ||
+          businessName.includes(normalizedSearch)
+
+        if (!matchesSearch) return false
+        if (selectedYearValue === null) return true
+
+        return getApplicationYear(client) === selectedYearValue
+      })
+      .sort((left, right) => {
+        const timestampDiff = getSortTimestamp(right) - getSortTimestamp(left)
+        if (timestampDiff !== 0) return timestampDiff
+        return getApplicationUid(left).localeCompare(getApplicationUid(right))
+      })
+  }, [clients, searchQuery, selectedYear])
 
   const openClientPreview = (record: BusinessApplicationRecord) => {
     const applicationUid = getApplicationUid(record)
@@ -946,13 +1299,27 @@ export default function TreasuryClientsPage() {
             <p className="text-sm text-slate-600">Total submitted applications</p>
             <p className="text-2xl font-semibold text-slate-900">{clientsLoading ? "..." : filteredClients.length}</p>
           </div>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Search clients by name..."
-            className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none ring-emerald-200 focus:ring md:max-w-sm"
-          />
+          <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search clients by name..."
+              className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none ring-emerald-200 focus:ring md:w-72"
+            />
+            <select
+              value={selectedYear}
+              onChange={(event) => setSelectedYear(event.target.value)}
+              className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none ring-emerald-200 focus:ring md:w-40"
+            >
+              <option value="all">All Years</option>
+              {availableYears.map((year) => (
+                <option key={year} value={String(year)}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {clientsError ? (
@@ -1046,6 +1413,81 @@ export default function TreasuryClientsPage() {
                 <p className="text-sm font-semibold text-slate-900">What This Form Is For</p>
                 <p className="mt-2 text-sm text-slate-600">This form is used to assess local taxes, compute regulatory fees, add inspection charges, and calculate the Grand Total for business permit approval.</p>
                 <p className="mt-2 text-xs text-slate-500">Typical use: Mayor's Permit application, business renewal, and new business registration.</p>
+              </div>
+
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <p className="text-sm font-semibold text-amber-900">Mobile-App Calculated Fee Reference (Prepared by External Team)</p>
+                <p className="mt-2 text-xs text-amber-800">
+                  Reference-only basis for treasury checking. These values are from the mobile app and are not final treasury-assessed fees.
+                </p>
+
+                {selectedMobileFeeReference ? (
+                  <div className="mt-3 space-y-3">
+                    <div className="grid gap-2 text-xs text-amber-900 md:grid-cols-2">
+                      <p>
+                        <span className="font-semibold">Basis Type:</span>{" "}
+                        {selectedMobileFeeReference.basisType || "-"}
+                      </p>
+                      <p>
+                        <span className="font-semibold">Basis Total:</span>{" "}
+                        {selectedMobileFeeReference.basisTotal !== null
+                          ? formatCurrency(selectedMobileFeeReference.basisTotal)
+                          : "-"}
+                      </p>
+                      <p>
+                        <span className="font-semibold">Estimated Total:</span>{" "}
+                        {selectedMobileFeeReference.estimatedTotal !== null
+                          ? formatCurrency(selectedMobileFeeReference.estimatedTotal)
+                          : "-"}
+                      </p>
+                      <p>
+                        <span className="font-semibold">Status:</span>{" "}
+                        {selectedMobileFeeReference.status || "-"}
+                      </p>
+                      <p>
+                        <span className="font-semibold">Computed:</span>{" "}
+                        {formatDateTimeCell(selectedMobileFeeReference.computedAt)}
+                      </p>
+                      <p className="md:col-span-2">
+                        <span className="font-semibold">Source:</span>{" "}
+                        {selectedMobileFeeReference.sourceLabel || selectedMobileFeeReference.sourcePath}
+                      </p>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-md border border-amber-200 bg-white">
+                      <table className="w-full min-w-[420px] border-collapse text-sm">
+                        <thead>
+                          <tr className="bg-amber-100 text-amber-900">
+                            <th className="border-b border-r border-amber-200 px-3 py-2 text-left font-semibold">Mobile Calculated Fee</th>
+                            <th className="border-b border-amber-200 px-3 py-2 text-right font-semibold whitespace-nowrap">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedMobileFeeReference.breakdown.length === 0 ? (
+                            <tr>
+                              <td colSpan={2} className="px-3 py-3 text-xs text-amber-800">
+                                No mobile-calculated fee breakdown was provided.
+                              </td>
+                            </tr>
+                          ) : (
+                            selectedMobileFeeReference.breakdown.map((item) => (
+                              <tr key={`${item.label}-${item.amount}`} className="text-slate-800">
+                                <td className="border-b border-r border-amber-100 px-3 py-2">{item.label}</td>
+                                <td className="border-b border-amber-100 px-3 py-2 text-right tabular-nums whitespace-nowrap">
+                                  {formatCurrency(item.amount)}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-amber-800">
+                    No mobile-calculated fee reference found for this application.
+                  </p>
+                )}
               </div>
 
               <div className="overflow-x-auto rounded-lg border-2 border-slate-300 bg-white">

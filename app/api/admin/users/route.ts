@@ -6,9 +6,9 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 export const revalidate = 0
 
-type ManagedRole = "staff" | "treasury"
+type ManagedRole = "staff" | "treasury" | "mho"
 
-const MANAGED_ROLES = new Set<ManagedRole>(["staff", "treasury"])
+const MANAGED_ROLES = new Set<ManagedRole>(["staff", "treasury", "mho"])
 const RAW_NAMESPACE =
   process.env.NEXT_PUBLIC_DATABASE_NAMESPACE ??
   process.env.NEXT_PUBLIC_FIREBASE_DATABASE_NAMESPACE ??
@@ -19,6 +19,7 @@ const resolveBaseNamespace = () => {
   if (trimmed.endsWith("/staff")) return trimmed.slice(0, -"/staff".length)
   if (trimmed.endsWith("/treasury")) return trimmed.slice(0, -"/treasury".length)
   if (trimmed.endsWith("/admin")) return trimmed.slice(0, -"/admin".length)
+  if (trimmed.endsWith("/mho")) return trimmed.slice(0, -"/mho".length)
   return trimmed
 }
 
@@ -46,6 +47,16 @@ const passwordToHash = (password: string) => createHash("sha256").update(passwor
 
 const roleFromValue = (value: unknown): ManagedRole | null => {
   const normalized = normalizeString(value).toLowerCase()
+  if (
+    ["mayors office", "mayor's office", "mayors_office", "mayors-office", "mayorsoffice"].includes(normalized)
+  ) {
+    return "staff"
+  }
+  if (
+    ["mho", "municipal health office", "health office", "municipal_health_office", "municipal-health-office"].includes(normalized)
+  ) {
+    return "mho"
+  }
   if (!MANAGED_ROLES.has(normalized as ManagedRole)) {
     return null
   }
@@ -174,6 +185,25 @@ const parseBody = async (request: NextRequest) => {
   }
 }
 
+const getErrorMessage = (error: unknown) => {
+  if (error instanceof Error && error.message) return error.message
+  if (typeof error === "object" && error !== null && "message" in error) {
+    const maybeMessage = (error as { message?: unknown }).message
+    if (typeof maybeMessage === "string" && maybeMessage.trim()) {
+      return maybeMessage
+    }
+  }
+  return String(error)
+}
+
+const isMissingRoleEmailIndexError = (error: unknown) =>
+  getErrorMessage(error).toLowerCase().includes('index not defined')
+
+const missingRoleEmailIndexMessage = (role: ManagedRole) =>
+  `Missing Realtime Database index for "${rolePath(
+    role
+  )}". Deploy rules with ".indexOn": ["email"] for this role.`
+
 const listRoleRecords = async (role: ManagedRole) => {
   const snapshot = await adminDb.ref(rolePath(role)).get()
   if (!snapshot.exists()) {
@@ -198,7 +228,7 @@ export async function GET(request: NextRequest) {
 
   const requestedRole = roleFromValue(request.nextUrl.searchParams.get("role"))
   if (request.nextUrl.searchParams.has("role") && !requestedRole) {
-    return NextResponse.json({ error: "Invalid role. Use staff or treasury." }, { status: 400 })
+    return NextResponse.json({ error: "Invalid role. Use Mayors Office, Treasury, or MHO." }, { status: 400 })
   }
 
   if (requestedRole) {
@@ -206,11 +236,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ role: requestedRole, users })
   }
 
-  const [staffUsers, treasuryUsers] = await Promise.all([listRoleRecords("staff"), listRoleRecords("treasury")])
+  const [staffUsers, treasuryUsers, mhoUsers] = await Promise.all([
+    listRoleRecords("staff"),
+    listRoleRecords("treasury"),
+    listRoleRecords("mho"),
+  ])
 
   return NextResponse.json({
     staff: staffUsers,
     treasury: treasuryUsers,
+    mho: mhoUsers,
   })
 }
 
@@ -227,7 +262,7 @@ export async function POST(request: NextRequest) {
 
   const role = roleFromValue(parsed.body.role)
   if (!role) {
-    return NextResponse.json({ error: "Role is required. Use staff or treasury." }, { status: 400 })
+    return NextResponse.json({ error: "Role is required. Use Mayors Office, Treasury, or MHO." }, { status: 400 })
   }
 
   const firstName = normalizeString(parsed.body.firstName)
@@ -245,12 +280,22 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const existingRoleUser = await getRoleRecordByEmail(role, email)
+  let existingRoleUser: Awaited<ReturnType<typeof getRoleRecordByEmail>> = null
+  try {
+    existingRoleUser = await getRoleRecordByEmail(role, email)
+  } catch (error) {
+    console.error(`Failed to query ${role} users by email`, error)
+    if (isMissingRoleEmailIndexError(error)) {
+      return NextResponse.json({ error: missingRoleEmailIndexMessage(role) }, { status: 500 })
+    }
+    const suffix = process.env.NODE_ENV === "development" ? ` ${getErrorMessage(error)}` : ""
+    return NextResponse.json({ error: `Failed to query existing users.${suffix}` }, { status: 500 })
+  }
   if (existingRoleUser) {
     return NextResponse.json({ error: "A user with this email already exists in this role." }, { status: 409 })
   }
 
-  let createdAuthUser
+  let createdAuthUser: { uid: string } | null = null
   try {
     createdAuthUser = await adminAuth.createUser({
       email,
@@ -266,42 +311,57 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to create Auth user." }, { status: 500 })
   }
 
-  const collectionRef = adminDb.ref(rolePath(role))
-  const newRef = collectionRef.push()
+  try {
+    const collectionRef = adminDb.ref(rolePath(role))
+    const newRef = collectionRef.push()
 
-  if (!newRef.key) {
-    try {
-      await adminAuth.deleteUser(createdAuthUser.uid)
-    } catch {}
-    return NextResponse.json({ error: "Failed to allocate a user ID." }, { status: 500 })
-  }
+    if (!newRef.key) {
+      try {
+        await adminAuth.deleteUser(createdAuthUser.uid)
+      } catch {}
+      return NextResponse.json({ error: "Failed to allocate a user ID." }, { status: 500 })
+    }
 
-  await newRef.set({
-    firstName,
-    ...(middleName ? { middleName } : {}),
-    lastName,
-    email,
-    passwordHash: passwordToHash(password),
-    status,
-    emailVerified,
-    uid: createdAuthUser.uid,
-    createdAt: adminServerValue.TIMESTAMP,
-    createdByEmail: auth.admin?.email ?? null,
-  })
-
-  return NextResponse.json({
-    role,
-    user: {
-      id: newRef.key,
+    await newRef.set({
       firstName,
-      middleName,
+      ...(middleName ? { middleName } : {}),
       lastName,
       email,
+      passwordHash: passwordToHash(password),
       status,
       emailVerified,
       uid: createdAuthUser.uid,
-    },
-  })
+      createdAt: adminServerValue.TIMESTAMP,
+      createdByEmail: auth.admin?.email ?? null,
+    })
+
+    // Only grant root admin access for staff accounts.
+    // Treasury and MHO users should stay scoped to their role dashboards.
+    if (role === "staff") {
+      await adminDb.ref(`admins/${createdAuthUser.uid}`).set(true)
+    }
+
+    return NextResponse.json({
+      role,
+      user: {
+        id: newRef.key,
+        firstName,
+        middleName,
+        lastName,
+        email,
+        status,
+        emailVerified,
+        uid: createdAuthUser.uid,
+      },
+    })
+  } catch (error) {
+    console.error(`Failed to persist ${role} user profile`, error)
+    try {
+      await adminAuth.deleteUser(createdAuthUser.uid)
+    } catch {}
+    const suffix = process.env.NODE_ENV === "development" ? ` ${getErrorMessage(error)}` : ""
+    return NextResponse.json({ error: `Failed to save user profile.${suffix}` }, { status: 500 })
+  }
 }
 
 export async function PATCH(request: NextRequest) {
@@ -317,7 +377,7 @@ export async function PATCH(request: NextRequest) {
 
   const role = roleFromValue(parsed.body.role)
   if (!role) {
-    return NextResponse.json({ error: "Role is required. Use staff or treasury." }, { status: 400 })
+    return NextResponse.json({ error: "Role is required. Use Mayors Office, Treasury, or MHO." }, { status: 400 })
   }
 
   const id = normalizeString(parsed.body.id)
@@ -355,7 +415,17 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (email !== normalizeString(current.email).toLowerCase()) {
-    const duplicate = await getRoleRecordByEmail(role, email)
+    let duplicate: Awaited<ReturnType<typeof getRoleRecordByEmail>> = null
+    try {
+      duplicate = await getRoleRecordByEmail(role, email)
+    } catch (error) {
+      console.error(`Failed to query ${role} users by email`, error)
+      if (isMissingRoleEmailIndexError(error)) {
+        return NextResponse.json({ error: missingRoleEmailIndexMessage(role) }, { status: 500 })
+      }
+      const suffix = process.env.NODE_ENV === "development" ? ` ${getErrorMessage(error)}` : ""
+      return NextResponse.json({ error: `Failed to query existing users.${suffix}` }, { status: 500 })
+    }
     if (duplicate && duplicate.id !== id) {
       return NextResponse.json({ error: "A user with this email already exists in this role." }, { status: 409 })
     }
@@ -417,6 +487,10 @@ export async function PATCH(request: NextRequest) {
           displayName: newDisplayName,
         })
         authUid = created.uid
+        if (role === "staff") {
+          // Only staff accounts get root admin privileges.
+          await adminDb.ref(`admins/${created.uid}`).set(true)
+        }
       } catch (error: any) {
         if (error?.code === "auth/email-already-exists") {
           try {
@@ -478,7 +552,7 @@ export async function DELETE(request: NextRequest) {
 
   const role = roleFromValue(parsed.body.role)
   if (!role) {
-    return NextResponse.json({ error: "Role is required. Use staff or treasury." }, { status: 400 })
+    return NextResponse.json({ error: "Role is required. Use Mayors Office, Treasury, or MHO." }, { status: 400 })
   }
 
   const id = normalizeString(parsed.body.id)
@@ -505,6 +579,10 @@ export async function DELETE(request: NextRequest) {
   }
 
   if (authUid) {
+    if (role === "staff") {
+      await adminDb.ref(`admins/${authUid}`).remove()
+    }
+
     try {
       await adminAuth.deleteUser(authUid)
     } catch (error: any) {

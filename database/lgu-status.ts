@@ -1,12 +1,9 @@
-import { realtimeDb } from "@/database/firebase"
+import { app, realtimeDb } from "@/database/firebase"
+import { getAuth } from "firebase/auth"
 import {
   ref,
   onValue,
   get,
-  update,
-  push,
-  set,
-  remove,
   type Unsubscribe,
 } from "firebase/database"
 
@@ -88,6 +85,46 @@ const defaultFeaturedEvent: FeaturedEvent = {
   details: "",
   category: "",
   bannerUrl: "",
+}
+
+type LguStatusWriteAction =
+  | { action: "saveMunicipalityStatus"; payload: Partial<MunicipalityStatus> }
+  | { action: "saveMayorStatus"; payload: Partial<MayorStatus> }
+  | { action: "saveFeaturedEvent"; payload: Partial<FeaturedEvent> }
+  | { action: "addUpcomingEvent"; payload: UpcomingEventInput }
+  | { action: "updateUpcomingEvent"; eventId: string; payload: Partial<UpcomingEventInput> }
+  | { action: "deleteUpcomingEvent"; eventId: string }
+
+async function getAuthTokenOrThrow() {
+  const auth = getAuth(app)
+  const currentUser = auth?.currentUser
+  if (!currentUser) {
+    throw new Error("Session expired. Please log in again.")
+  }
+  return currentUser.getIdToken()
+}
+
+async function requestLguStatusWrite<T = void>(body: LguStatusWriteAction): Promise<T> {
+  const idToken = await getAuthTokenOrThrow()
+  const response = await fetch("/api/lgu-status", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify(body),
+  })
+
+  if (!response.ok) {
+    const errorPayload = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new Error(errorPayload?.error || "Failed to update LGU status.")
+  }
+
+  if (response.status === 204) {
+    return undefined as T
+  }
+
+  return (await response.json()) as T
 }
 
 function sanitizePayload<T extends Record<string, unknown>>(payload: T) {
@@ -195,36 +232,50 @@ export function subscribeToStatusBoard(
 }
 
 export async function saveMunicipalityStatus(data: Partial<MunicipalityStatus>) {
-  const municipalityRef = ref(realtimeDb, `${STATUS_BOARD_PATH}/municipality`)
-  await update(municipalityRef, sanitizePayload(data))
+  await requestLguStatusWrite({
+    action: "saveMunicipalityStatus",
+    payload: sanitizePayload(data),
+  })
 }
 
 export async function saveMayorStatus(data: Partial<MayorStatus>) {
-  const mayorRef = ref(realtimeDb, `${STATUS_BOARD_PATH}/mayor`)
-  await update(mayorRef, sanitizePayload(data))
+  await requestLguStatusWrite({
+    action: "saveMayorStatus",
+    payload: sanitizePayload(data),
+  })
 }
 
 export async function saveFeaturedEvent(data: Partial<FeaturedEvent>) {
-  const featuredRef = ref(realtimeDb, `${STATUS_BOARD_PATH}/featuredEvent`)
-  await update(featuredRef, sanitizePayload(data))
+  await requestLguStatusWrite({
+    action: "saveFeaturedEvent",
+    payload: sanitizePayload(data),
+  })
 }
 
 export async function addUpcomingEvent(data: UpcomingEventInput): Promise<string> {
-  const eventsRef = ref(realtimeDb, `${STATUS_BOARD_PATH}/upcomingEvents`)
-  const newEventRef = push(eventsRef)
-  if (!newEventRef.key) {
+  const result = await requestLguStatusWrite<{ id: string }>({
+    action: "addUpcomingEvent",
+    payload: sanitizePayload(data),
+  })
+
+  if (!result?.id) {
     throw new Error("Unable to create event entry")
   }
-  await set(newEventRef, sanitizePayload(data))
-  return newEventRef.key
+
+  return result.id
 }
 
 export async function updateUpcomingEvent(eventId: string, data: Partial<UpcomingEventInput>) {
-  const eventRef = ref(realtimeDb, `${STATUS_BOARD_PATH}/upcomingEvents/${eventId}`)
-  await update(eventRef, sanitizePayload(data))
+  await requestLguStatusWrite({
+    action: "updateUpcomingEvent",
+    eventId,
+    payload: sanitizePayload(data),
+  })
 }
 
 export async function deleteUpcomingEvent(eventId: string) {
-  const eventRef = ref(realtimeDb, `${STATUS_BOARD_PATH}/upcomingEvents/${eventId}`)
-  await remove(eventRef)
+  await requestLguStatusWrite({
+    action: "deleteUpcomingEvent",
+    eventId,
+  })
 }

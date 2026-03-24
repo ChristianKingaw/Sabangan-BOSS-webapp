@@ -39,7 +39,7 @@
 
 ## At A Glance
 
-- Unified staff workspace for business permits, clearance processing, treasury, and status board operations.
+- Unified Mayors Office workspace for business permits, clearance processing, treasury, and status board operations.
 - Document-heavy workflow support: DOCX generation, PDF conversion, and printable exports.
 - Firebase-centered architecture with Next.js App Router APIs.
 - Production path includes Firebase Hosting + Cloud Run converter service.
@@ -49,7 +49,7 @@
 ```mermaid
 flowchart LR
   subgraph Actors["Users and Portals"]
-    staff["Staff (/)"]
+    mayorsOffice["Mayors Office (/)"]
     admin["Admin (/admin)"]
     treasury["Treasury (/treasury)"]
     public["Public (/lgu-status)"]
@@ -76,7 +76,7 @@ flowchart LR
     wordcom["Windows fallback: Word COM (clearance PDF)"]
   end
 
-  staff --> ui
+  mayorsOffice --> ui
   admin --> ui
   treasury --> ui
   public --> ui
@@ -103,13 +103,13 @@ flowchart LR
 
 ## What This System Covers
 
-### Staff Portal (`/`)
+### Mayors Office Portal (`/`)
 
-- Staff sign-in with Firebase Auth and verification checks.
+- Mayors Office sign-in with Firebase Auth and verification checks.
 - Business application review with filtering, status updates, and requirement validation.
 - Requirement review workspace at `/client/[id]` with document approvals/rejections.
 - Document workflows for DOCX preview, PDF conversion, merged output, and printing.
-- Built-in messenger for staff-client communication.
+- Built-in messenger for Mayors Office-client communication.
 
 ### Mayor's Clearance Workflow
 
@@ -130,9 +130,9 @@ flowchart LR
 
 ## Screenshots
 
-| Staff Login | Treasury Login |
+| Mayors Office Login | Treasury Login |
 |---|---|
-| ![BOSS Staff Login](docs/screenshots/boss-signin.png) | ![Treasury Login](docs/screenshots/treasury-signin.png) |
+| ![BOSS Mayors Office Login](docs/screenshots/boss-signin.png) | ![Treasury Login](docs/screenshots/treasury-signin.png) |
 
 ## Stack
 

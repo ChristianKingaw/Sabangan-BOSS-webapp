@@ -32,7 +32,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
-import { getAuth, signOut } from "firebase/auth"
+import { getAuth, onAuthStateChanged, signOut } from "firebase/auth"
 import { app as firebaseApp } from "@/database/firebase"
 import {
   addUpcomingEvent,
@@ -52,12 +52,14 @@ import {
 import { cn } from "@/lib/utils"
 
 const firebaseAuth = getAuth(firebaseApp)
+const MAYORS_OFFICE_EMAIL_STORAGE_KEY = "bossMayorsOfficeEmail"
+const LEGACY_STAFF_EMAIL_STORAGE_KEY = "bossStaffEmail"
 
 const navItems = [
   { id: "home", label: "Home", icon: LayoutDashboard, href: "/?page=home" },
   { id: "clients", label: "Business Application", icon: FileText, href: "/?page=clients" },
   { id: "clearance-applications", label: "Mayor's Clearance Application", icon: ClipboardList, href: "/?page=clearance-applications" },
-  { id: "clearance-clients", label: "Mayor's Clearance", icon: Award, href: "/?page=clearance-clients" },
+  { id: "clearance-clients", label: "Mayor's Clearance File", icon: Award, href: "/?page=clearance-clients" },
   { id: "lgu-status", label: "LGU Status", icon: CalendarDays, href: "/lgu-status" },
 ] as const
 
@@ -245,12 +247,26 @@ export default function LguStatusClient() {
     if (typeof window === "undefined") {
       return
     }
-    const storedEmail = localStorage.getItem("bossStaffEmail")
+    const storedEmail =
+      localStorage.getItem(MAYORS_OFFICE_EMAIL_STORAGE_KEY) ??
+      localStorage.getItem(LEGACY_STAFF_EMAIL_STORAGE_KEY)
     if (!storedEmail) {
       router.replace("/")
       return
     }
-    setLoggedInEmail(storedEmail)
+    const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
+      if (!user) {
+        localStorage.removeItem(MAYORS_OFFICE_EMAIL_STORAGE_KEY)
+        localStorage.removeItem(LEGACY_STAFF_EMAIL_STORAGE_KEY)
+        router.replace("/")
+        return
+      }
+      setLoggedInEmail((user.email ?? storedEmail).trim().toLowerCase())
+    })
+
+    return () => {
+      unsubscribe()
+    }
   }, [router])
 
   useEffect(() => {
@@ -308,6 +324,14 @@ export default function LguStatusClient() {
     return statusBoard?.upcomingEvents ?? []
   }, [statusBoard?.upcomingEvents])
 
+  useEffect(() => {
+    if (!editingEventId) return
+    const editedEventExists = upcomingEvents.some((eventItem) => eventItem.id === editingEventId)
+    if (editedEventExists) return
+    setEditingEventId(null)
+    setEventForm(defaultUpcomingEventForm)
+  }, [editingEventId, upcomingEvents])
+
   const latestUpdate = useMemo(() => {
     const timestamps = [
       statusBoard?.municipality?.lastUpdatedAt,
@@ -325,7 +349,8 @@ export default function LguStatusClient() {
 
   const handleLogout = async () => {
     await signOut(firebaseAuth).catch(() => undefined)
-    localStorage.removeItem("bossStaffEmail")
+    localStorage.removeItem(MAYORS_OFFICE_EMAIL_STORAGE_KEY)
+    localStorage.removeItem(LEGACY_STAFF_EMAIL_STORAGE_KEY)
     router.replace("/")
   }
 
@@ -477,6 +502,10 @@ export default function LguStatusClient() {
     setDeletingEventId(eventId)
     try {
       await deleteUpcomingEvent(eventId)
+      if (editingEventId === eventId) {
+        setEditingEventId(null)
+        setEventForm(defaultUpcomingEventForm)
+      }
       toast.success("Event removed")
     } catch (deleteError) {
       console.error(deleteError)

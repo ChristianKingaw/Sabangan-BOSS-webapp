@@ -1,0 +1,305 @@
+{
+  "rules": {
+    "publicData": {
+      ".read": true,
+      ".write": false
+    },
+    "admins": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('admins/' + auth.uid).val() == true"
+    },
+    "users": {
+      "mobileApp": {
+        ".read": "auth != null && root.child('admins/' + auth.uid).val() == true",
+        "$uid": {
+          ".read": "auth != null && (auth.uid == $uid || root.child('admins/' + auth.uid).val() == true)",
+          ".write": "auth != null && auth.uid == $uid",
+          ".indexOn": [
+            "emailLower"
+          ]
+        }
+      },
+      "webapp": {
+        "staff": {
+          ".read": true,
+          ".write": "auth != null && root.child('admins/' + auth.uid).val() == true",
+          ".indexOn": [
+            "email"
+          ],
+          "$uid": {
+            ".read": true,
+            ".write": "auth != null && root.child('admins/' + auth.uid).val() == true",
+            ".indexOn": [
+              "email"
+            ],
+            ".validate": "newData.exists() == false || (newData.hasChildren(['firstName', 'lastName', 'email', 'passwordHash']) && newData.child('firstName').isString() && newData.child('lastName').isString() && newData.child('email').isString() && newData.child('passwordHash').isString() && (!newData.child('middleName').exists() || newData.child('middleName').isString() || newData.child('middleName').val() == null) && (!newData.child('uid').exists() || newData.child('uid').isString()) && (!newData.child('status').exists() || newData.child('status').isString() || newData.child('status').val() == null) && (!newData.child('emailVerified').exists() || newData.child('emailVerified').isBoolean()) && (!newData.child('createdByEmail').exists() || newData.child('createdByEmail').isString() || newData.child('createdByEmail').val() == null) && (!newData.child('updatedByEmail').exists() || newData.child('updatedByEmail').isString() || newData.child('updatedByEmail').val() == null) && (!newData.child('createdAt').exists() || newData.child('createdAt').isNumber() || newData.child('createdAt').child('.sv').val() == 'timestamp') && (!newData.child('updatedAt').exists() || newData.child('updatedAt').isNumber() || newData.child('updatedAt').child('.sv').val() == 'timestamp'))"
+          }
+        },
+        "admin": {
+          ".read": true,
+          ".write": "auth != null && root.child('admins/' + auth.uid).val() == true",
+          ".indexOn": [
+            "email"
+          ],
+          "$uid": {
+            ".read": true,
+            ".write": "auth != null && root.child('admins/' + auth.uid).val() == true",
+            ".indexOn": [
+              "email"
+            ]
+          }
+        },
+        "treasury": {
+          ".read": true,
+          ".write": "auth != null && root.child('admins/' + auth.uid).val() == true",
+          ".indexOn": [
+            "email"
+          ],
+          "$uid": {
+            ".read": true,
+            ".write": "auth != null && root.child('admins/' + auth.uid).val() == true",
+            ".indexOn": [
+              "email"
+            ],
+            ".validate": "newData.exists() == false || (newData.hasChildren(['firstName', 'lastName', 'email', 'passwordHash']) && newData.child('firstName').isString() && newData.child('lastName').isString() && newData.child('email').isString() && newData.child('passwordHash').isString() && (!newData.child('middleName').exists() || newData.child('middleName').isString() || newData.child('middleName').val() == null) && (!newData.child('uid').exists() || newData.child('uid').isString()) && (!newData.child('status').exists() || newData.child('status').isString() || newData.child('status').val() == null) && (!newData.child('emailVerified').exists() || newData.child('emailVerified').isBoolean()) && (!newData.child('createdByEmail').exists() || newData.child('createdByEmail').isString() || newData.child('createdByEmail').val() == null) && (!newData.child('updatedByEmail').exists() || newData.child('updatedByEmail').isString() || newData.child('updatedByEmail').val() == null) && (!newData.child('createdAt').exists() || newData.child('createdAt').isNumber() || newData.child('createdAt').child('.sv').val() == 'timestamp') && (!newData.child('updatedAt').exists() || newData.child('updatedAt').isNumber() || newData.child('updatedAt').child('.sv').val() == 'timestamp'))"
+          }
+        },
+        "mho": {
+          ".read": true,
+          ".write": "auth != null && root.child('admins/' + auth.uid).val() == true",
+          ".indexOn": [
+            "email"
+          ],
+          "$uid": {
+            ".read": true,
+            ".write": "auth != null && root.child('admins/' + auth.uid).val() == true",
+            ".indexOn": [
+              "email"
+            ],
+            ".validate": "newData.exists() == false || (newData.hasChildren(['firstName', 'lastName', 'email', 'passwordHash']) && newData.child('firstName').isString() && newData.child('lastName').isString() && newData.child('email').isString() && newData.child('passwordHash').isString() && (!newData.child('middleName').exists() || newData.child('middleName').isString() || newData.child('middleName').val() == null) && (!newData.child('uid').exists() || newData.child('uid').isString()) && (!newData.child('status').exists() || newData.child('status').isString() || newData.child('status').val() == null) && (!newData.child('emailVerified').exists() || newData.child('emailVerified').isBoolean()) && (!newData.child('createdByEmail').exists() || newData.child('createdByEmail').isString() || newData.child('createdByEmail').val() == null) && (!newData.child('updatedByEmail').exists() || newData.child('updatedByEmail').isString() || newData.child('updatedByEmail').val() == null) && (!newData.child('createdAt').exists() || newData.child('createdAt').isNumber() || newData.child('createdAt').child('.sv').val() == 'timestamp') && (!newData.child('updatedAt').exists() || newData.child('updatedAt').isNumber() || newData.child('updatedAt').child('.sv').val() == 'timestamp'))"
+          }
+        }
+      }
+    },
+    "Treasury": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "fees": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".indexOn": [
+          "application_uid",
+          "client_uid"
+        ],
+        "$uid": {
+          ".validate": "newData.hasChildren(['uid', 'application_uid', 'fees']) || newData.hasChildren(['uid', 'client_uid', 'fees']) || newData.exists() == false"
+        }
+      }
+    },
+    "estimated_fees": {
+      ".indexOn": [
+        "application_uid",
+        "client_uid",
+        "status",
+        "overall_status",
+        "application_type",
+        "business_type",
+        "business_name",
+        "basis_type",
+        "createdAt",
+        "updatedAt",
+        "submittedAt"
+      ],
+      "$appId": {
+        ".read": "auth != null && (root.child('admins/' + auth.uid).val() == true || data.child('client_uid').val() == auth.uid)",
+        ".write": "auth != null && (root.child('admins/' + auth.uid).val() == true || (!data.exists() && newData.child('client_uid').val() == auth.uid && newData.child('application_uid').val() == $appId) || data.child('client_uid').val() == auth.uid)",
+        ".validate": "newData.exists() == false || (!newData.isString() && !newData.isNumber() && !newData.isBoolean() && newData.child('client_uid').isString() && newData.child('application_uid').isString() && newData.child('application_uid').val() == $appId && (!newData.child('source_path').exists() || newData.child('source_path').isString()) && (!newData.child('status').exists() || newData.child('status').isString()) && (!newData.child('overall_status').exists() || newData.child('overall_status').isString()) && (!newData.child('application_type').exists() || newData.child('application_type').isString()) && (!newData.child('business_type').exists() || newData.child('business_type').isString()) && (!newData.child('business_name').exists() || newData.child('business_name').isString()) && (!newData.child('trade_name').exists() || newData.child('trade_name').isString()) && (!newData.child('applicant_name').exists() || newData.child('applicant_name').isString()) && (!newData.child('basis_type').exists() || newData.child('basis_type').isString()) && (!newData.child('capital_total').exists() || newData.child('capital_total').isNumber()) && (!newData.child('gross_total').exists() || newData.child('gross_total').isNumber()) && (!newData.child('basis_total').exists() || newData.child('basis_total').isNumber()) && (!newData.child('capital_total_entered_by_user').exists() || newData.child('capital_total_entered_by_user').isNumber()) && (!newData.child('gross_total_entered_by_user').exists() || newData.child('gross_total_entered_by_user').isNumber()) && (!newData.child('basis_total_entered_by_user').exists() || newData.child('basis_total_entered_by_user').isNumber()) && (!newData.child('estimated_treasury_fees_total').exists() || newData.child('estimated_treasury_fees_total').isNumber()) && (!newData.child('estimated_treasury_fees').exists() || (!newData.child('estimated_treasury_fees').isString() && !newData.child('estimated_treasury_fees').isNumber() && !newData.child('estimated_treasury_fees').isBoolean() && (!newData.child('estimated_treasury_fees/mayors_permit').exists() || newData.child('estimated_treasury_fees/mayors_permit').isNumber()) && (!newData.child('estimated_treasury_fees/mayors_clearance').exists() || newData.child('estimated_treasury_fees/mayors_clearance').isNumber()) && (!newData.child('estimated_treasury_fees/sanitary_permit').exists() || newData.child('estimated_treasury_fees/sanitary_permit').isNumber()) && (!newData.child('estimated_treasury_fees/weights_and_measure').exists() || newData.child('estimated_treasury_fees/weights_and_measure').isNumber()) && (!newData.child('estimated_treasury_fees/subscription_fee').exists() || newData.child('estimated_treasury_fees/subscription_fee').isNumber()) && (!newData.child('estimated_treasury_fees/dst').exists() || newData.child('estimated_treasury_fees/dst').isNumber()) && (!newData.child('estimated_treasury_fees/zoning').exists() || newData.child('estimated_treasury_fees/zoning').isNumber()) && (!newData.child('estimated_treasury_fees/others_total').exists() || newData.child('estimated_treasury_fees/others_total').isNumber()) && (!newData.child('estimated_treasury_fees/estimated_total').exists() || newData.child('estimated_treasury_fees/estimated_total').isNumber()) && (!newData.child('estimated_treasury_fees/others').exists() || (!newData.child('estimated_treasury_fees/others').isString() && !newData.child('estimated_treasury_fees/others').isNumber() && !newData.child('estimated_treasury_fees/others').isBoolean())))) && (!newData.child('createdAt').exists() || newData.child('createdAt').isNumber() || newData.child('createdAt').child('.sv').val() == 'timestamp') && (!newData.child('updatedAt').exists() || newData.child('updatedAt').isNumber() || newData.child('updatedAt').child('.sv').val() == 'timestamp') && (!newData.child('submittedAt').exists() || newData.child('submittedAt').isNumber() || newData.child('submittedAt').child('.sv').val() == 'timestamp'))"
+      }
+    },
+    "business": {
+      ".read": true,
+      "posts": {
+        ".read": true,
+        ".write": false
+      },
+      "business_application": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".indexOn": [
+          "meta/createdAt",
+          "meta/status",
+          "meta/applicantUid"
+        ],
+        "$appId": {
+          ".read": "auth != null && (data.child('meta/applicantUid').val() == auth.uid || root.child('admins/' + auth.uid).val() == true)",
+          ".write": "auth != null && (root.child('admins/' + auth.uid).val() == true || (!data.exists() && newData.child('meta/applicantUid').val() == auth.uid) || (data.child('meta/applicantUid').val() == auth.uid))",
+          "meta": {
+            "applicantUid": {
+              ".write": "auth != null && (root.child('admins/' + auth.uid).val() == true || !data.exists())",
+              ".validate": "newData.isString() && (root.child('admins/' + auth.uid).val() == true || newData.val() == auth.uid)"
+            },
+            "status": {
+              ".validate": "newData.isString()"
+            },
+            "overallStatus": {
+              ".validate": "newData.isString()"
+            },
+            "municipality": {
+              ".validate": "newData.isString()"
+            },
+            "businessName": {
+              ".validate": "newData.isString()"
+            },
+            "createdAt": {
+              ".validate": "newData.isNumber() || newData.child('.sv').val() == 'timestamp'"
+            },
+            "updatedAt": {
+              ".validate": "newData.isNumber() || newData.child('.sv').val() == 'timestamp'"
+            }
+          },
+          "form": {
+            ".write": "auth != null && (root.child('admins/' + auth.uid).val() == true || data.parent().child('meta/applicantUid').val() == auth.uid)",
+            ".validate": "!newData.exists() || (!newData.isString() && !newData.isNumber() && !newData.isBoolean())"
+          },
+          "requirements": {
+            ".read": "auth != null",
+            ".write": "auth != null && (root.child('admins/' + auth.uid).val() == true || root.child('business/business_application/' + $appId + '/meta/applicantUid').val() == auth.uid)"
+          },
+          "chat": {
+            ".write": "auth != null && (root.child('admins/' + auth.uid).val() == true || data.parent().child('meta/applicantUid').val() == auth.uid)",
+            ".validate": "!newData.exists() || (!newData.isString() && !newData.isNumber() && !newData.isBoolean())"
+          }
+        }
+      }
+    },
+    "lgu_sabangan_status": {
+      ".read": true,
+      ".write": "auth != null && root.child('admins/' + auth.uid).val() == true",
+      "statusBoard": {
+        ".read": true,
+        ".write": "auth != null && root.child('admins/' + auth.uid).val() == true",
+        ".indexOn": [
+          "municipality/lastUpdatedAt",
+          "featuredEvent/date"
+        ],
+        "municipality": {
+          "isOpen": {
+            ".validate": "newData.isBoolean()"
+          },
+          "officeHours": {
+            ".validate": "newData.isString()"
+          },
+          "publicNote": {
+            ".validate": "newData.isString()"
+          },
+          "lastUpdatedAt": {
+            ".validate": "newData.isNumber() || newData.child('.sv').val() == 'timestamp'"
+          },
+          "lastUpdatedBy": {
+            ".validate": "newData.isString()"
+          }
+        },
+        "mayor": {
+          "availability": {
+            ".validate": "newData.isString()"
+          },
+          "note": {
+            ".validate": "newData.isString()"
+          },
+          "expectedBack": {
+            ".validate": "newData.isString()"
+          }
+        },
+        "featuredEvent": {
+          "enabled": {
+            ".validate": "newData.isBoolean()"
+          },
+          "title": {
+            ".validate": "newData.isString()"
+          },
+          "subtitle": {
+            ".validate": "newData.isString()"
+          },
+          "date": {
+            ".validate": "newData.isString()"
+          },
+          "time": {
+            ".validate": "newData.isString()"
+          },
+          "location": {
+            ".validate": "newData.isString()"
+          },
+          "details": {
+            ".validate": "newData.isString()"
+          },
+          "category": {
+            ".validate": "newData.isString()"
+          },
+          "bannerUrl": {
+            ".validate": "newData.isString()"
+          },
+          "updatedAt": {
+            ".validate": "newData.isNumber() || newData.child('.sv').val() == 'timestamp'"
+          },
+          "updatedBy": {
+            ".validate": "newData.isString()"
+          }
+        },
+        "upcomingEvents": {
+          "$evtId": {
+            "title": {
+              ".validate": "newData.isString()"
+            },
+            "date": {
+              ".validate": "newData.isString()"
+            },
+            "time": {
+              ".validate": "newData.isString()"
+            },
+            "location": {
+              ".validate": "newData.isString()"
+            },
+            "category": {
+              ".validate": "newData.isString()"
+            },
+            "details": {
+              ".validate": "newData.isString()"
+            }
+          }
+        }
+      }
+    },
+    "mayors_clearance_files": {
+      ".read": "auth != null && (root.child('admins/' + auth.uid).val() == true || !root.child('users/mobileApp/' + auth.uid).exists())",
+      ".write": "auth != null && (root.child('admins/' + auth.uid).val() == true || !root.child('users/mobileApp/' + auth.uid).exists())"
+    },
+    "mayors_clearance": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": [
+        "meta/createdAt",
+        "meta/status",
+        "meta/applicantUid"
+      ],
+      "$uid": {
+        "$appId": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        }
+      }
+    },
+    "mayors_clearance_applications": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": [
+        "meta/createdAt",
+        "meta/status",
+        "meta/applicantUid"
+      ],
+      "$appId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    }
+  }
+}

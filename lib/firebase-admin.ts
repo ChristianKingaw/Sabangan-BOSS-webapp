@@ -10,6 +10,8 @@ function getFirebaseAdminApp(): admin.app.App {
   const existing = admin.apps.at(0)
   if (existing) return existing
 
+  const configuredProjectId = getConfiguredProjectId()
+
   const isManagedRuntime =
     process.env.K_SERVICE ||
     process.env.FUNCTION_TARGET ||
@@ -49,15 +51,25 @@ function getFirebaseAdminApp(): admin.app.App {
   // 1) If explicit JSON is provided via env, use it
   const jsonEnv = process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON
   if (jsonEnv) {
+    let parsed: admin.ServiceAccount | undefined
     try {
-      const parsed = JSON.parse(jsonEnv)
-      credential = admin.credential.cert(parsed)
-      if (!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID && parsed.project_id) {
-        process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID = parsed.project_id
-      }
+      parsed = JSON.parse(jsonEnv) as admin.ServiceAccount
     } catch {
       // ignore and continue to file fallback
       credential = undefined
+    }
+
+    if (!credential && parsed) {
+      const parsedProjectId = readServiceAccountProjectId(parsed)
+      assertProjectIdsMatch(
+        configuredProjectId,
+        parsedProjectId,
+        "FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON"
+      )
+      credential = admin.credential.cert(parsed)
+      if (!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID && parsedProjectId) {
+        process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID = parsedProjectId
+      }
     }
   }
 
@@ -68,9 +80,10 @@ function getFirebaseAdminApp(): admin.app.App {
       ? undefined
       : process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_PATH ?? process.env.GOOGLE_APPLICATION_CREDENTIALS
 
-    const candidatePaths = [envServiceAccountPathCandidate, ...findServiceAccountFallbackPaths()].filter(
-      Boolean
-    ) as string[]
+    const candidatePaths = [
+      envServiceAccountPathCandidate,
+      ...findServiceAccountFallbackPaths(configuredProjectId),
+    ].filter(Boolean) as string[]
     const serviceAccountPath = candidatePaths.find((p) => {
       try {
         return existsSync(p) && statSync(p).isFile()
@@ -85,13 +98,20 @@ function getFirebaseAdminApp(): admin.app.App {
       try {
         const raw = readFileSync(serviceAccountPath, "utf8")
         parsedServiceAccount = JSON.parse(raw)
-        if (!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID && parsedServiceAccount.project_id) {
-          process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID = parsedServiceAccount.project_id
-        }
-        credential = admin.credential.cert(parsedServiceAccount)
       } catch (err) {
         throw new Error(`Failed to read/parse service account JSON: ${String(err)}`)
       }
+
+      const parsedProjectId = readServiceAccountProjectId(parsedServiceAccount)
+      assertProjectIdsMatch(
+        configuredProjectId,
+        parsedProjectId,
+        `service account file "${serviceAccountPath}"`
+      )
+      if (!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID && parsedProjectId) {
+        process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID = parsedProjectId
+      }
+      credential = admin.credential.cert(parsedServiceAccount)
     }
   }
 
@@ -107,29 +127,32 @@ function getFirebaseAdminApp(): admin.app.App {
   if (!credential) {
     const envServiceAccountPathCandidate =
       process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_PATH ?? process.env.GOOGLE_APPLICATION_CREDENTIALS
-    const checked = [envServiceAccountPathCandidate, ...findServiceAccountFallbackPaths()]
+    const checked = [envServiceAccountPathCandidate, ...findServiceAccountFallbackPaths(configuredProjectId)]
       .filter(Boolean)
       .join(", ")
 
     const runtimeMsg = isManagedRuntime
       ? "Managed runtime detected, but ADC was unavailable."
       : "Local runtime detected."
+    const configuredProjectMsg = configuredProjectId
+      ? ` Configured projectId: "${configuredProjectId}".`
+      : ""
     throw new Error(
-      `${runtimeMsg} Missing Firebase Admin credentials. Checked paths: ${checked}. ` +
+      `${runtimeMsg}${configuredProjectMsg} Missing Firebase Admin credentials. Checked paths: ${checked}. ` +
         `Set FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON or a valid FIREBASE_ADMIN_SERVICE_ACCOUNT_PATH, ` +
         `or configure Application Default Credentials.`
     )
   }
 
   const databaseURL =
-    process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL ?? process.env.FIREBASE_DATABASE_URL ?? undefined
+    process.env.FIREBASE_DATABASE_URL ?? process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL ?? undefined
 
   const projectId =
-    process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? process.env.FIREBASE_PROJECT_ID ?? undefined
+    process.env.FIREBASE_PROJECT_ID ?? process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? undefined
 
   if (!databaseURL) {
     throw new Error(
-      "Missing Firebase Realtime Database URL. Set NEXT_PUBLIC_FIREBASE_DATABASE_URL in .env.local"
+      "Missing Firebase Realtime Database URL. Set FIREBASE_DATABASE_URL or NEXT_PUBLIC_FIREBASE_DATABASE_URL in .env.local"
     )
   }
 
@@ -152,8 +175,12 @@ function statSafeIsFile(p: string) {
   }
 }
 
-function findServiceAccountFallbackPaths() {
-  const filenamePattern = /^sabangan-app-firebase-adminsdk-fbsvc-[a-z0-9]+\.json$/i
+function findServiceAccountFallbackPaths(projectIdHint?: string) {
+  const filenamePattern = /^[a-z0-9-]+-firebase-adminsdk-[a-z0-9]+-[a-z0-9]+\.json$/i
+  const normalizedProjectIdHint = projectIdHint?.trim().toLowerCase()
+  const expectedPrefix = normalizedProjectIdHint
+    ? `${normalizedProjectIdHint}-firebase-adminsdk-`
+    : undefined
   const candidateDirs = [
     path.resolve(process.cwd(), "database/data"),
     path.resolve(__dirname, "..", "database/data"),
@@ -164,7 +191,12 @@ function findServiceAccountFallbackPaths() {
     try {
       const files = readdirSync(dir, { withFileTypes: true })
       for (const file of files) {
-        if (file.isFile() && filenamePattern.test(file.name)) {
+        const normalizedFilename = file.name.toLowerCase()
+        if (
+          file.isFile() &&
+          filenamePattern.test(normalizedFilename) &&
+          (!expectedPrefix || normalizedFilename.startsWith(expectedPrefix))
+        ) {
           discovered.push(path.resolve(dir, file.name))
         }
       }
@@ -174,4 +206,36 @@ function findServiceAccountFallbackPaths() {
   }
 
   return Array.from(new Set(discovered))
+}
+
+function getConfiguredProjectId() {
+  return normalizeProjectId(
+    process.env.FIREBASE_PROJECT_ID ?? process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID
+  )
+}
+
+function normalizeProjectId(value?: string) {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : undefined
+}
+
+function readServiceAccountProjectId(
+  serviceAccount: Pick<admin.ServiceAccount, "projectId"> & { project_id?: string }
+) {
+  return normalizeProjectId(serviceAccount.project_id ?? serviceAccount.projectId)
+}
+
+function assertProjectIdsMatch(
+  configuredProjectId: string | undefined,
+  credentialProjectId: string | undefined,
+  source: string
+) {
+  if (!configuredProjectId || !credentialProjectId || configuredProjectId === credentialProjectId) {
+    return
+  }
+
+  throw new Error(
+    `Firebase Admin credential project mismatch. Configured projectId is "${configuredProjectId}" but ${source} belongs to "${credentialProjectId}". ` +
+      `Use credentials from the configured project, or update NEXT_PUBLIC_FIREBASE_PROJECT_ID/FIREBASE_PROJECT_ID to match.`
+  )
 }

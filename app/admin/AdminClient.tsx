@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth"
+import { FirebaseError } from "firebase/app"
 import { Edit3, LogOut, Plus, Save, Trash2, X } from "lucide-react"
 import { app as firebaseApp } from "@/database/firebase"
 import { findAdminByEmail, type AdminRecord } from "@/database/admin"
@@ -15,7 +16,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "sonner"
 
-type ManagedRole = "staff" | "treasury"
+type ManagedRole = "staff" | "treasury" | "mho"
 
 type ManagedUser = {
   id: string
@@ -64,8 +65,9 @@ const EMPTY_CREATE_FORM: UserFormState = {
 }
 
 const ROLE_LABELS: Record<ManagedRole, string> = {
-  staff: "Mayor's Office",
+  staff: "Mayors Office",
   treasury: "Treasury",
+  mho: "Municipal Health Office",
 }
 
 const APPLICATION_SOURCE_LABELS: Record<ApplicationSource, string> = {
@@ -106,6 +108,7 @@ export default function AdminClient() {
   const [usersByRole, setUsersByRole] = useState<Record<ManagedRole, ManagedUser[]>>({
     staff: [],
     treasury: [],
+    mho: [],
   })
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -188,14 +191,23 @@ export default function AdminClient() {
       })
 
       let body: Record<string, any> = {}
+      let rawText = ""
       try {
         body = (await response.json()) as Record<string, any>
       } catch {
+        try {
+          rawText = (await response.text()).trim()
+        } catch {
+          rawText = ""
+        }
         body = {}
       }
 
       if (!response.ok) {
-        throw new Error(String(body?.error ?? "Request failed."))
+        const fallbackMessage = rawText
+          ? `Request failed (${response.status}): ${rawText.slice(0, 300)}`
+          : `Request failed (${response.status}).`
+        throw new Error(String(body?.error ?? fallbackMessage))
       }
 
       return body
@@ -241,14 +253,17 @@ export default function AdminClient() {
       const body = await apiRequest("GET")
       const staff = Array.isArray(body?.staff) ? (body.staff as ManagedUser[]) : []
       const treasury = Array.isArray(body?.treasury) ? (body.treasury as ManagedUser[]) : []
+      const mho = Array.isArray(body?.mho) ? (body.mho as ManagedUser[]) : []
 
       setUsersByRole({
         staff,
         treasury,
+        mho,
       })
 
       setSelectedIds((prev) => {
-        const availableIds = new Set((activeRole === "staff" ? staff : treasury).map((u) => u.id))
+        const currentRoleUsers = activeRole === "staff" ? staff : activeRole === "treasury" ? treasury : mho
+        const availableIds = new Set(currentRoleUsers.map((u) => u.id))
         const next = new Set<string>()
         prev.forEach((id) => {
           if (availableIds.has(id)) next.add(id)
@@ -290,7 +305,7 @@ export default function AdminClient() {
 
   useEffect(() => {
     if (!isAuthed) {
-      setUsersByRole({ staff: [], treasury: [] })
+      setUsersByRole({ staff: [], treasury: [], mho: [] })
       setSelectedIds(new Set())
       setEditId(null)
       setBusinessApplications([])
@@ -315,7 +330,8 @@ export default function AdminClient() {
     }
     try {
       setAuthLoading(true)
-      const cred = await signInWithEmailAndPassword(auth, loginForm.email.trim(), loginForm.password)
+      const normalizedEmail = loginForm.email.trim().toLowerCase()
+      const cred = await signInWithEmailAndPassword(auth, normalizedEmail, loginForm.password)
       const user = cred.user
       if (!user.email) throw new Error("Missing email on user")
       const record = await findAdminByEmail(user.email)
@@ -326,9 +342,19 @@ export default function AdminClient() {
       }
       setMe(record)
       toast.success("Signed in as admin")
-    } catch (err: any) {
+    } catch (err) {
       console.error(err)
-      toast.error(err?.message ?? "Login failed")
+      if (err instanceof FirebaseError) {
+        if (err.code === "auth/invalid-credential" || err.code === "auth/wrong-password") {
+          toast.error("Invalid email or password.")
+        } else if (err.code === "auth/too-many-requests") {
+          toast.error("Too many attempts. Try again in a few minutes.")
+        } else {
+          toast.error(err.message || "Login failed")
+        }
+      } else {
+        toast.error(err instanceof Error ? err.message : "Login failed")
+      }
     } finally {
       setAuthLoading(false)
     }
@@ -628,7 +654,7 @@ export default function AdminClient() {
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-2">
-            {(["staff", "treasury"] as ManagedRole[]).map((role) => (
+            {(["staff", "treasury", "mho"] as ManagedRole[]).map((role) => (
               <Button
                 key={role}
                 type="button"
