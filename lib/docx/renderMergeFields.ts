@@ -2,7 +2,7 @@ import PizZip from "pizzip"
 
 const MERGE_FIELD_BLOCK_REGEX =
   /(<w:fldChar\b[^>]*w:fldCharType="begin"[^>]*\/>)([\s\S]*?<w:instrText\b[^>]*>[\s\S]*?<\/w:instrText>[\s\S]*?<w:fldChar\b[^>]*w:fldCharType="separate"[^>]*\/>)([\s\S]*?)(<w:fldChar\b[^>]*w:fldCharType="end"[^>]*\/>)/g
-const MERGE_FIELD_NAME_REGEX = /MERGEFIELD\s+([A-Za-z0-9_]+)/i
+const MERGE_FIELD_NAME_REGEX = /MERGEFIELD\s+(?:"([^"]+)"|([^\s\\]+))/i
 const TEXT_RUN_REGEX = /(<w:t(?:\s+[^>]*)?>)([\s\S]*?)(<\/w:t>)/g
 
 const escapeXml = (value: string) =>
@@ -45,6 +45,27 @@ function resolveBraceTokenValue(
   return normalizeMergeFieldValue(normalizedMatch)
 }
 
+function extractMergeFieldName(instructionAndSeparate: string): string | null {
+  const fieldMatch = MERGE_FIELD_NAME_REGEX.exec(instructionAndSeparate)
+  if (!fieldMatch) return null
+  const fieldName = (fieldMatch[1] ?? fieldMatch[2] ?? "").trim()
+  return fieldName || null
+}
+
+function resolveMergeFieldValue(
+  rawFieldName: string,
+  mergeFields: Record<string, unknown>,
+  mergeFieldLookup: Map<string, unknown>
+) {
+  if (rawFieldName in mergeFields) {
+    return normalizeMergeFieldValue(mergeFields[rawFieldName])
+  }
+
+  const normalizedMatch = mergeFieldLookup.get(normalizeBraceTokenName(rawFieldName))
+  if (normalizedMatch === undefined) return ""
+  return normalizeMergeFieldValue(normalizedMatch)
+}
+
 function replaceFieldResultRuns(segment: string, value: string) {
   const escapedValue = escapeXml(value)
   const needsPreserve = value.length > 0 && (value.startsWith(" ") || value.endsWith(" "))
@@ -62,14 +83,15 @@ function replaceFieldResultRuns(segment: string, value: string) {
 }
 
 function replaceMergeFieldsInXml(xml: string, mergeFields: Record<string, unknown>) {
+  const mergeFieldLookup = buildBraceTokenLookup(mergeFields)
+
   return xml.replace(
     MERGE_FIELD_BLOCK_REGEX,
     (_match, begin, instructionAndSeparate, resultSegment, end) => {
-      const fieldMatch = MERGE_FIELD_NAME_REGEX.exec(instructionAndSeparate)
-      if (!fieldMatch) return `${begin}${instructionAndSeparate}${resultSegment}${end}`
+      const fieldName = extractMergeFieldName(instructionAndSeparate)
+      if (!fieldName) return `${begin}${instructionAndSeparate}${resultSegment}${end}`
 
-      const fieldName = fieldMatch[1]
-      const replacementValue = normalizeMergeFieldValue(mergeFields[fieldName])
+      const replacementValue = resolveMergeFieldValue(fieldName, mergeFields, mergeFieldLookup)
       const updatedResultSegment = replaceFieldResultRuns(resultSegment, replacementValue)
       return `${begin}${instructionAndSeparate}${updatedResultSegment}${end}`
     }

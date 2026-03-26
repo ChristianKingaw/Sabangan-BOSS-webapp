@@ -2,13 +2,47 @@ import { existsSync, readdirSync, statSync, readFileSync } from "fs"
 import admin from "firebase-admin"
 import path from "path"
 
+const DEFAULT_ADMIN_APP_NAME = "__eboss_admin__"
+
+function normalizeDatabaseUrl(value?: string) {
+  const trimmed = value?.trim()
+  if (!trimmed) return undefined
+  return trimmed.replace(/\/+$/, "")
+}
+
+function getConfiguredDatabaseUrl() {
+  return normalizeDatabaseUrl(
+    process.env.FIREBASE_DATABASE_URL ?? process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL
+  )
+}
+
 /**
  * Initialize Firebase Admin SDK for server-side operations.
  * Uses service account credentials for authentication.
  */
 function getFirebaseAdminApp(): admin.app.App {
-  const existing = admin.apps.at(0)
-  if (existing) return existing
+  const appName = normalizeAppName(process.env.FIREBASE_ADMIN_APP_NAME)
+  const configuredDatabaseURL = getConfiguredDatabaseUrl()
+
+  // Prefer a dedicated named app to avoid accidentally reusing a pre-initialized
+  // [DEFAULT] app that may point to a different RTDB instance in managed runtimes.
+  try {
+    return admin.app(appName)
+  } catch {
+    // app not initialized yet
+  }
+
+  const existingDefaultApp = admin.apps
+    .filter((app): app is admin.app.App => app != null)
+    .find((app) => app.name === "[DEFAULT]")
+  if (existingDefaultApp && configuredDatabaseURL) {
+    const existingDefaultUrl = normalizeDatabaseUrl(
+      (existingDefaultApp.options as { databaseURL?: string } | undefined)?.databaseURL
+    )
+    if (existingDefaultUrl === configuredDatabaseURL) {
+      return existingDefaultApp
+    }
+  }
 
   const configuredProjectId = getConfiguredProjectId()
 
@@ -144,8 +178,7 @@ function getFirebaseAdminApp(): admin.app.App {
     )
   }
 
-  const databaseURL =
-    process.env.FIREBASE_DATABASE_URL ?? process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL ?? undefined
+  const databaseURL = configuredDatabaseURL
 
   const projectId =
     process.env.FIREBASE_PROJECT_ID ?? process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? undefined
@@ -159,7 +192,21 @@ function getFirebaseAdminApp(): admin.app.App {
   const initOpts: Record<string, unknown> = { credential, databaseURL }
   if (projectId) initOpts.projectId = projectId
 
-  return admin.initializeApp(initOpts)
+  if (existingDefaultApp) {
+    const existingDefaultUrl = normalizeDatabaseUrl(
+      (existingDefaultApp.options as { databaseURL?: string } | undefined)?.databaseURL
+    )
+    if (existingDefaultUrl && existingDefaultUrl !== databaseURL) {
+      console.warn(
+        `[firebase-admin] Existing default app databaseURL "${existingDefaultUrl}" differs from configured "${databaseURL}". ` +
+          `Initializing isolated app "${appName}" to avoid cross-database reads.`
+      )
+    } else if (existingDefaultUrl === databaseURL) {
+      return existingDefaultApp
+    }
+  }
+
+  return admin.initializeApp(initOpts, appName)
 }
 
 export const adminApp = getFirebaseAdminApp()
@@ -217,6 +264,11 @@ function getConfiguredProjectId() {
 function normalizeProjectId(value?: string) {
   const trimmed = value?.trim()
   return trimmed ? trimmed : undefined
+}
+
+function normalizeAppName(value?: string) {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : DEFAULT_ADMIN_APP_NAME
 }
 
 function readServiceAccountProjectId(

@@ -123,6 +123,12 @@ export type TemplateData = {
 
 const CHECKED = "☑"
 const UNCHECKED = "☐"
+type ApplicantNameParts = {
+  firstName: string
+  middleName: string
+  lastName: string
+  fullName: string
+}
 
 /**
  * Format a date string to a readable format
@@ -172,6 +178,73 @@ function formatAddress(value?: unknown): string {
     .replace(/\s*,\s*/g, ", ") // normalize comma spacing
     .replace(/,\s*,+/g, ", ") // collapse consecutive commas
     .replace(/,\s*$/, "") // drop trailing comma
+}
+
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim()
+}
+
+function pickString(form: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const raw = form[key]
+    if (raw === undefined || raw === null) continue
+    const value = normalizeWhitespace(String(raw))
+    if (value) return value
+  }
+  return ""
+}
+
+function splitFullName(fullName: string): Omit<ApplicantNameParts, "fullName"> {
+  const normalizedFullName = normalizeWhitespace(fullName)
+  if (!normalizedFullName) return { firstName: "", middleName: "", lastName: "" }
+
+  if (normalizedFullName.includes(",")) {
+    const [lastPart, restPart] = normalizedFullName.split(",", 2)
+    const restParts = normalizeWhitespace(restPart ?? "").split(" ").filter(Boolean)
+    return {
+      firstName: restParts[0] ?? "",
+      middleName: restParts.slice(1).join(" "),
+      lastName: normalizeWhitespace(lastPart),
+    }
+  }
+
+  const parts = normalizedFullName.split(" ").filter(Boolean)
+  if (parts.length === 1) return { firstName: parts[0], middleName: "", lastName: "" }
+  if (parts.length === 2) return { firstName: parts[0], middleName: "", lastName: parts[1] }
+  return {
+    firstName: parts[0],
+    middleName: parts.slice(1, -1).join(" "),
+    lastName: parts[parts.length - 1],
+  }
+}
+
+function resolveApplicantNameParts(form: Record<string, unknown>): ApplicantNameParts {
+  const directFirstName = pickString(form, ["firstName", "firstname", "givenName"])
+  const directMiddleName = pickString(form, ["middleName", "middlename", "middle", "middle_name"])
+  const directLastName = pickString(form, ["lastName", "lastname", "surname", "familyName"])
+  const fallbackFullName = pickString(form, [
+    "fullName",
+    "applicantName",
+    "taxpayerRegistrant",
+    "ownerName",
+    "name",
+  ])
+
+  const parsedFromFullName = splitFullName(fallbackFullName)
+
+  const firstName = directFirstName || parsedFromFullName.firstName
+  const middleName = directMiddleName || parsedFromFullName.middleName
+  const lastName = directLastName || parsedFromFullName.lastName
+  const fullName = normalizeWhitespace(
+    [firstName, middleName, lastName].filter(Boolean).join(" ")
+  ) || fallbackFullName
+
+  return {
+    firstName,
+    middleName,
+    lastName,
+    fullName,
+  }
 }
 
 /**
@@ -258,15 +331,19 @@ export function mapApplicationToTemplate(
     grossSalesReceipts: formatInteger((activity.grossSales ?? activity.grossSalesReceipts ?? "") as string | number | undefined),
   }))
 
-  // Build full name for taxpayer/registrant
-  const fullName = [
-    String(form.firstName ?? ""),
-    String(form.middleName ?? ""),
-    String(form.lastName ?? ""),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .trim()
+  // Resolve name parts with fallback support so sworn templates always receive values.
+  const nameParts = resolveApplicantNameParts(form)
+  const fullName = nameParts.fullName
+  const businessAddressRaw =
+    form.businessAddress ?? form["businessAdress"] ?? form["address"] ?? ""
+  const resolvedBusinessAddress = formatAddress(businessAddressRaw)
+  const ownerAddressRaw =
+    form.ownerAddress ??
+    form["ownerAdress"] ??
+    form["residentialAddress"] ??
+    form["homeAddress"] ??
+    businessAddressRaw
+  const resolvedOwnerAddress = formatAddress(ownerAddressRaw)
 
   // Employee counts
   const totalEmployees = parseInt(String(form.totalEmployees ?? 0), 10) || 0
@@ -322,20 +399,22 @@ export function mapApplicationToTemplate(
 
     // Name / business identity
     taxpayerRegistrant: fullName || String(form.businessName ?? ""),
-    lastName: String(form.lastName ?? ""),
-    firstName: String(form.firstName ?? ""),
-    middleName: String(form.middleName ?? ""),
+    lastName: nameParts.lastName,
+    firstName: nameParts.firstName,
+    middleName: nameParts.middleName,
+    applicantName: fullName,
+    fullName,
     businessName: String(form.businessName ?? ""),
     tradeName: String(form.tradeName ?? ""),
 
     // Business address / contact
-    businessAddress: formatAddress(form.businessAddress),
+    businessAddress: resolvedBusinessAddress,
     businessPostalCode: String(form.businessPostalCode ?? ""),
     businessMobile: String(form.businessMobile ?? ""),
     businessEmail: String(form.businessEmail ?? ""),
 
     // Owner address / contact
-    ownerAddress: String(form.ownerAddress ?? ""),
+    ownerAddress: resolvedOwnerAddress,
     ownerPostalCode: String(form.ownerPostalCode ?? ""),
     ownerMobile: String(form.ownerMobile ?? ""),
     ownerEmail: String(form.ownerEmail ?? ""),

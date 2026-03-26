@@ -212,6 +212,8 @@ GOOGLE_APPLICATION_CREDENTIALS=C:\path\to\service-account.json
 Production-safe deployment `.env` sample:
 
 ```env
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+NEXT_PUBLIC_FIREBASE_DATABASE_URL=https://your-db-name.firebasedatabase.app
 CONVERTER_SERVICE_URL=https://converter-<hash>.asia-southeast1.run.app/convert/docx-to-pdf
 ```
 

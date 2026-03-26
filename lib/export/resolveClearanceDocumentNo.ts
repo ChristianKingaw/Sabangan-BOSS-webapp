@@ -1,4 +1,5 @@
 import { MAYORS_CLEARANCE_APPLICATION_PATH } from "@/lib/clearance-applications"
+import { BUSINESS_APPLICATION_PATH } from "@/lib/business-applications"
 
 const parseDateToTimestamp = (value: unknown) => {
   if (typeof value === "number" && Number.isFinite(value)) return value
@@ -96,6 +97,18 @@ function isApprovedPayload(payload: any) {
   return normalized.includes("approve") || normalized.includes("complete") || normalized.includes("process")
 }
 
+type MayorsRow = {
+  applicantUid: string
+  applicationId: string
+  ts: number
+}
+
+const sortMayorsRows = (a: MayorsRow, b: MayorsRow) => {
+  if (a.ts !== b.ts) return a.ts - b.ts
+  if (a.applicantUid !== b.applicantUid) return a.applicantUid.localeCompare(b.applicantUid)
+  return a.applicationId.localeCompare(b.applicationId)
+}
+
 export async function resolveFallbackClearanceDocumentNo(
   adminDb: any,
   applicantUid: string,
@@ -106,8 +119,8 @@ export async function resolveFallbackClearanceDocumentNo(
     if (!snap.exists()) return ""
 
     const node = (snap.val() ?? {}) as Record<string, Record<string, any>>
-    const approvedRows: Array<{ applicantUid: string; applicationId: string; ts: number }> = []
-    const allRows: Array<{ applicantUid: string; applicationId: string; ts: number }> = []
+    const approvedRows: MayorsRow[] = []
+    const allRows: MayorsRow[] = []
 
     for (const [uid, applications] of Object.entries(node)) {
       if (!applications || typeof applications !== "object") continue
@@ -127,11 +140,7 @@ export async function resolveFallbackClearanceDocumentNo(
       }
     }
 
-    approvedRows.sort((a, b) => {
-      if (a.ts !== b.ts) return a.ts - b.ts
-      if (a.applicantUid !== b.applicantUid) return a.applicantUid.localeCompare(b.applicantUid)
-      return a.applicationId.localeCompare(b.applicationId)
-    })
+    approvedRows.sort(sortMayorsRows)
 
     const approvedIndex = approvedRows.findIndex(
       (row) => row.applicantUid === applicantUid && row.applicationId === applicationId
@@ -140,15 +149,63 @@ export async function resolveFallbackClearanceDocumentNo(
       return String(approvedIndex + 1)
     }
 
-    allRows.sort((a, b) => {
-      if (a.ts !== b.ts) return a.ts - b.ts
-      if (a.applicantUid !== b.applicantUid) return a.applicantUid.localeCompare(b.applicantUid)
-      return a.applicationId.localeCompare(b.applicationId)
-    })
+    allRows.sort(sortMayorsRows)
 
     const fallbackIndex = allRows.findIndex(
       (row) => row.applicantUid === applicantUid && row.applicationId === applicationId
     )
+    if (fallbackIndex < 0) return ""
+
+    return String(fallbackIndex + 1)
+  } catch {
+    return ""
+  }
+}
+
+type BusinessRow = {
+  applicationId: string
+  ts: number
+}
+
+const sortBusinessRows = (a: BusinessRow, b: BusinessRow) => {
+  if (a.ts !== b.ts) return a.ts - b.ts
+  return a.applicationId.localeCompare(b.applicationId)
+}
+
+export async function resolveFallbackBusinessClearanceDocumentNo(
+  adminDb: any,
+  businessApplicationId: string
+): Promise<string> {
+  try {
+    const snap = await adminDb.ref(BUSINESS_APPLICATION_PATH).get()
+    if (!snap.exists()) return ""
+
+    const node = (snap.val() ?? {}) as Record<string, any>
+    const approvedRows: BusinessRow[] = []
+    const allRows: BusinessRow[] = []
+
+    for (const [appId, payload] of Object.entries(node)) {
+      allRows.push({
+        applicationId: appId,
+        ts: getRecordTimestamp(payload),
+      })
+
+      if (isApprovedPayload(payload)) {
+        approvedRows.push({
+          applicationId: appId,
+          ts: getApprovedTimestamp(payload),
+        })
+      }
+    }
+
+    approvedRows.sort(sortBusinessRows)
+    const approvedIndex = approvedRows.findIndex((row) => row.applicationId === businessApplicationId)
+    if (approvedIndex >= 0) {
+      return String(approvedIndex + 1)
+    }
+
+    allRows.sort(sortBusinessRows)
+    const fallbackIndex = allRows.findIndex((row) => row.applicationId === businessApplicationId)
     if (fallbackIndex < 0) return ""
 
     return String(fallbackIndex + 1)

@@ -8,9 +8,10 @@
     "indexes": "firestore.indexes.json"
   },
   "hosting": {
+    "site": "sabangan-boss-webapp",
     "source": ".",
     "frameworksBackend": {
-      "region": "us-central1"
+      "region": "asia-southeast1"
     },
     "ignore": [
       "firebase.json",
@@ -22,7 +23,7 @@
         "source": "/api/convert/**",
         "run": {
           "serviceId": "converter",
-          "region": "asia-southeast1"
+          "region": "asia-south1"
         }
       }
     ]

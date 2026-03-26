@@ -194,6 +194,10 @@ export function mapClearanceToMergeFields(
     pickStringLoose(meta, ["businessAddress", "businessAdress", "address", "businessLocation"]) ||
     pickStringLoose(root, ["businessAddress", "businessAdress", "address", "businessLocation"]) ||
     pickStringLoose(rootAddress, ["fullAddress", "address", "street", "line1"])
+  const rawOwnerAddress =
+    pickStringLoose(form, ["ownerAddress", "ownerAdress", "residentialAddress", "homeAddress"]) ||
+    pickStringLoose(meta, ["ownerAddress", "ownerAdress", "residentialAddress", "homeAddress"]) ||
+    pickStringLoose(root, ["ownerAddress", "ownerAdress", "residentialAddress", "homeAddress"])
   const purpose =
     pickString(form, ["purpose", "reason", "applicationPurpose", "clearancePurpose"]) || "Mayor's Clearance"
   const currentDate1st = getCurrentDateLabel()
@@ -219,6 +223,10 @@ export function mapClearanceToMergeFields(
     "clearance_number",
     "mcNo",
     "mc_no",
+    "registrationNo",
+    "registration_no",
+    "regNo",
+    "reg_no",
     "no",
   ]
   const clearanceNo =
@@ -265,16 +273,21 @@ export function mapClearanceToMergeFields(
   const resolvedProvince = province || inferredProvince
   const townProvince = [resolvedTown, resolvedProvince].filter(Boolean).join(", ")
   const resolvedBusinessAddress = rawBusinessAddress || [barangay, townProvince].filter(Boolean).join(", ")
+  const resolvedOwnerAddress = rawOwnerAddress || resolvedBusinessAddress
   const cityProvince =
     explicitCityProvince ||
     resolvedProvince ||
     municipality
+  const resolvedOfficialReceiptNo =
+    pickStringLoose(form, ["officialReceiptNo", "orNo", "ORNo", "receiptNo"]) ||
+    String(treasuryAssessment?.or_no ?? "").trim()
 
   return {
     name,
     businessType,
     mergeFields: {
       No: clearanceNo,
+      no: clearanceNo,
       First_Name: name.firstName,
       Middle_Name: name.middleName,
       Last_Name: name.lastName,
@@ -285,6 +298,9 @@ export function mapClearanceToMergeFields(
       businessName: resolvedBusinessName,
       businessAddress: resolvedBusinessAddress,
       businessAdress: resolvedBusinessAddress,
+      ownerAddress: resolvedOwnerAddress,
+      ownerAdress: resolvedOwnerAddress,
+      OwnerAddress: resolvedOwnerAddress,
       Barangay: barangay,
       barangay,
       Town: resolvedTown,
@@ -310,9 +326,12 @@ export function mapClearanceToMergeFields(
         pickString(form, ["placeOfIssuance", "cedulaPlaceIssued", "issuedAt", "issuePlace"]) ||
         "Sabangan, Mountain Province",
       Purpose: purpose,
-      OR_No:
-        pickStringLoose(form, ["orNo", "ORNo", "officialReceiptNo", "receiptNo"]) ||
-        String(treasuryAssessment?.or_no ?? "").trim(),
+      OR_No: resolvedOfficialReceiptNo,
+      ORNo: resolvedOfficialReceiptNo,
+      orNo: resolvedOfficialReceiptNo,
+      officialReceiptNo: resolvedOfficialReceiptNo,
+      OfficialReceiptNo: resolvedOfficialReceiptNo,
+      official_receipt_no: resolvedOfficialReceiptNo,
       OR_date: orDate,
       currentDate1st,
       currentDate2nd,

@@ -17,7 +17,7 @@ import {
   type ClearanceApplicationRecord,
 } from "@/lib/clearance-applications"
 import { renderAsync } from "docx-preview"
-import { handlePrintHtml, handlePrintPdf } from "@/lib/print"
+import { handlePrintHtml } from "@/lib/print"
 
 // Helper to sanitize keys for Firebase RTDB paths
 const sanitizeKey = (key: string) => key.replace(/[.#$\/\[\]]/g, "_")
@@ -474,7 +474,7 @@ function ClearanceRequirementsContent() {
     try {
       setIsClearancePrintLoading(true)
       const idToken = await currentUser.getIdToken()
-      const response = await fetch("/api/export/clearance-pdf", {
+      const response = await fetch("/api/export/clearance-docx", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -490,20 +490,28 @@ function ClearanceRequirementsContent() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
-        console.error("Failed to generate Mayor's Clearance PDF for print:", errorData)
-        toast.error("Unable to prepare exact-print PDF right now.")
+        console.error("Failed to generate Mayor's Clearance DOCX:", errorData)
+        toast.error("Unable to prepare Mayor's Clearance DOCX right now.")
         return
       }
 
       const blob = await response.blob()
-      const pdfUrl = URL.createObjectURL(blob)
-      handlePrintPdf(pdfUrl, `${application.applicantName} - Mayor's Clearance`)
+      const fileUrl = URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = fileUrl
+      anchor.download = `${application.applicantName || "Applicant"}_Mayors_Clearance.docx`
+        .replace(/[^\w.\-]+/g, "_")
+        .replace(/_+/g, "_")
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
       setTimeout(() => {
-        try { URL.revokeObjectURL(pdfUrl) } catch {}
-      }, 30_000)
+        try { URL.revokeObjectURL(fileUrl) } catch {}
+      }, 5_000)
+      toast.success("DOCX downloaded. You can print it from Word.")
     } catch (error) {
-      console.error("Error printing Mayor's Clearance:", error)
-      toast.error("Unable to print Mayor's Clearance right now.")
+      console.error("Error downloading Mayor's Clearance DOCX:", error)
+      toast.error("Unable to download Mayor's Clearance right now.")
     } finally {
       setIsClearancePrintLoading(false)
     }
@@ -575,10 +583,10 @@ function ClearanceRequirementsContent() {
               {isClearancePrintLoading ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Preparing print...
+                  Preparing DOCX...
                 </>
               ) : (
-                "Print Mayor's Clearance"
+                "Download Mayor's Clearance (DOCX)"
               )}
             </Button>
           </div>

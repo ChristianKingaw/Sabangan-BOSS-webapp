@@ -13,7 +13,10 @@ import { getRequestPublicOrigin } from "@/lib/http/getRequestPublicOrigin"
 import { MAYORS_CLEARANCE_APPLICATION_PATH } from "@/lib/clearance-applications"
 import { BUSINESS_APPLICATION_PATH } from "@/lib/business-applications"
 import { mapClearanceToMergeFields } from "@/lib/export/mapClearanceToMergeFields"
-import { resolveFallbackClearanceDocumentNo } from "@/lib/export/resolveClearanceDocumentNo"
+import {
+  resolveFallbackBusinessClearanceDocumentNo,
+  resolveFallbackClearanceDocumentNo,
+} from "@/lib/export/resolveClearanceDocumentNo"
 import { fetchLatestTreasuryAssessmentByClientUid } from "@/lib/treasury-assessment"
 import { getRedisClient } from "@/lib/redis"
 
@@ -100,6 +103,7 @@ const ExportRequestSchema = z
     businessApplicationId: z.string().min(1, "Business application ID is required").optional(),
     applicationSource: z.enum(["business", "mayors_clearance"]).optional(),
     applicationClass: z.enum(["corp_or_association", "regular_business", "mayors_clearance"]).optional(),
+    displayNo: z.union([z.number(), z.string()]).optional(),
   })
   .superRefine((value, ctx) => {
     if (value.applicationSource === "business") {
@@ -266,6 +270,26 @@ function shouldUseSecondClearancePage(businessType: string) {
   )
 }
 
+function ensureSecondPageNoPrefix(value: string) {
+  const trimmed = String(value ?? "").trim()
+  if (!trimmed) return ""
+  return trimmed.startsWith("000") ? trimmed : `000${trimmed}`
+}
+
+function normalizeDisplayNo(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return String(Math.trunc(value))
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    if (!trimmed || !/^\d+$/.test(trimmed)) return ""
+    const parsed = Number(trimmed)
+    if (!Number.isFinite(parsed) || parsed <= 0) return ""
+    return String(Math.trunc(parsed))
+  }
+  return ""
+}
+
 async function keepSinglePdfPage(pdfBuffer: Buffer, pageNumber: number): Promise<Buffer> {
   const src = await PDFDocument.load(pdfBuffer)
   const pageCount = src.getPageCount()
@@ -418,7 +442,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Server misconfigured: Firebase Admin DB not initialized" }, { status: 500 })
     }
 
-    const { businessApplicationId, applicationSource, applicationClass } = parseResult.data
+    const { businessApplicationId, applicationSource, applicationClass, displayNo } = parseResult.data
     const isBusinessRequest =
       applicationSource === "business" ? true :
       applicationSource === "mayors_clearance" ? false :
@@ -465,16 +489,25 @@ export async function POST(request: NextRequest) {
       mergeFields.Purpose = "Business"
     }
 
-    const rankedNo = !isBusinessRequest
-      ? await resolveFallbackClearanceDocumentNo(adminDb, applicantUid, applicationId)
-      : ""
-    if (rankedNo) mergeFields.No = rankedNo
-
     const targetPageNumber =
       applicationClass === "mayors_clearance" ? 1 :
       applicationClass === "corp_or_association" ? 2 :
       applicationClass === "regular_business" ? 1 :
       shouldUseSecondClearancePage(businessType) ? 2 : 1
+
+    let resolvedNo = normalizeDisplayNo(displayNo) || String(mergeFields.no ?? mergeFields.No ?? "").trim()
+    if (!resolvedNo) {
+      resolvedNo = isBusinessRequest
+        ? await resolveFallbackBusinessClearanceDocumentNo(adminDb, sourceApplicationId)
+        : await resolveFallbackClearanceDocumentNo(adminDb, applicantUid, applicationId)
+    }
+    if (resolvedNo && targetPageNumber === 2) {
+      resolvedNo = ensureSecondPageNoPrefix(resolvedNo)
+    }
+    if (resolvedNo) {
+      mergeFields.No = resolvedNo
+      mergeFields.no = resolvedNo
+    }
 
     const baseName = `${[name.firstName, name.lastName].filter(Boolean).join("_") || "Applicant"}_Mayors_Clearance`
       .replace(/[^\w.-]+/g, "_")

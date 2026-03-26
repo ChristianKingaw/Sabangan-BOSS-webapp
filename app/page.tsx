@@ -688,7 +688,6 @@ export default function HomePage() {
   const [clearanceApplicantsError, setClearanceApplicantsError] = useState<string | null>(null)
   const [clearanceApplicantsSearch, setClearanceApplicantsSearch] = useState("")
   const [clearanceApplicantsStatus, setClearanceApplicantsStatus] = useState<ClearanceStatusFilter>("All")
-  const [printingClearanceApplicationId, setPrintingClearanceApplicationId] = useState<string | null>(null)
   const [downloadingClearanceApplicationId, setDownloadingClearanceApplicationId] = useState<string | null>(null)
   const [clearanceApplicationDateFilter, setClearanceApplicationDateFilter] = useState<Date | undefined>(undefined)
   const [clearanceRecordRange, setClearanceRecordRange] = useState<"monthly" | "yearly">("yearly")
@@ -1160,61 +1159,8 @@ export default function HomePage() {
     }
   }
 
-  const handlePrintClearanceApplication = useCallback(
-    async (record: ClearanceApplicationRecord, event?: React.MouseEvent) => {
-      event?.stopPropagation()
-
-      const { isBusinessRecord, body } = resolveClearanceExportPayload(record)
-      if (!isBusinessRecord && !record.applicantUid) {
-        toast.error("Missing applicant information for this record.")
-        return
-      }
-
-      try {
-        const auth = getAuthInstance()
-        const currentUser = auth?.currentUser
-        if (!currentUser) {
-          toast.error("You must be logged in to print.")
-          return
-        }
-
-        setPrintingClearanceApplicationId(record.id)
-        const idToken = await currentUser.getIdToken()
-
-        const response = await fetch("/api/export/clearance-pdf", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${idToken}`,
-          },
-          body: JSON.stringify(body),
-        })
-
-        if (!response.ok) {
-          const errData = await response.json().catch(() => ({}))
-          console.error("Failed to generate PDF for printing:", errData)
-          toast.error("Unable to prepare exact-print PDF right now.")
-          return
-        }
-
-        const blob = await response.blob()
-        const pdfUrl = URL.createObjectURL(blob)
-        handlePrintPdf(pdfUrl, `${record.applicantName} - Mayor's Clearance`)
-        setTimeout(() => {
-          try { URL.revokeObjectURL(pdfUrl) } catch {}
-        }, 30_000)
-      } catch (error) {
-        console.error("Error printing record:", error)
-        toast.error("Unable to print this record right now.")
-      } finally {
-        setPrintingClearanceApplicationId((prev) => (prev === record.id ? null : prev))
-      }
-    },
-    [getAuthInstance]
-  )
-
   const handleDownloadClearanceApplication = useCallback(
-    async (record: ClearanceApplicationRecord, event?: React.MouseEvent) => {
+    async (record: ClearanceApplicationRecord, event?: React.MouseEvent, displayNo?: number) => {
       event?.stopPropagation()
 
       const { isBusinessRecord, body } = resolveClearanceExportPayload(record)
@@ -1234,19 +1180,24 @@ export default function HomePage() {
         setDownloadingClearanceApplicationId(record.id)
         const idToken = await currentUser.getIdToken()
 
-        const response = await fetch("/api/export/clearance-pdf", {
+        const response = await fetch("/api/export/clearance-docx", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${idToken}`,
           },
-          body: JSON.stringify(body),
+          body: JSON.stringify({
+            ...body,
+            ...(typeof displayNo === "number" && Number.isFinite(displayNo) && displayNo > 0
+              ? { displayNo: Math.trunc(displayNo) }
+              : {}),
+          }),
         })
 
         if (!response.ok) {
           const errData = await response.json().catch(() => ({}))
-          console.error("Failed to generate PDF for download:", errData)
-          toast.error("Unable to prepare PDF download right now.")
+          console.error("Failed to generate DOCX for download:", errData)
+          toast.error("Unable to prepare DOCX download right now.")
           return
         }
 
@@ -1254,7 +1205,7 @@ export default function HomePage() {
         const fileUrl = URL.createObjectURL(blob)
         const anchor = document.createElement("a")
         anchor.href = fileUrl
-        anchor.download = `${record.applicantName || "Applicant"}_Mayors_Clearance.pdf`
+        anchor.download = `${record.applicantName || "Applicant"}_Mayors_Clearance.docx`
           .replace(/[^\w.\-]+/g, "_")
           .replace(/_+/g, "_")
         document.body.appendChild(anchor)
@@ -3769,28 +3720,8 @@ export default function HomePage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={(e) => handlePrintClearanceApplication(application, e)}
+                          onClick={(e) => handleDownloadClearanceApplication(application, e, index + 1)}
                           disabled={
-                            printingClearanceApplicationId === application.id ||
-                            downloadingClearanceApplicationId === application.id ||
-                            (!application.id.startsWith("business-") && !application.applicantUid)
-                          }
-                        >
-                          {printingClearanceApplicationId === application.id ? (
-                            <>
-                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                              Printing...
-                            </>
-                          ) : (
-                            "Print"
-                          )}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={(e) => handleDownloadClearanceApplication(application, e)}
-                          disabled={
-                            printingClearanceApplicationId === application.id ||
                             downloadingClearanceApplicationId === application.id ||
                             (!application.id.startsWith("business-") && !application.applicantUid)
                           }
@@ -3803,7 +3734,7 @@ export default function HomePage() {
                           ) : (
                             <>
                               <Download className="h-4 w-4 mr-2" />
-                              Download
+                              Download DOCX
                             </>
                           )}
                         </Button>
