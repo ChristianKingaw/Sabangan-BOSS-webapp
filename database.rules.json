@@ -22,13 +22,13 @@
       "webapp": {
         "staff": {
           ".read": true,
-          ".write": "auth != null && root.child('admins/' + auth.uid).val() == true",
+          ".write": "auth != null && (root.child('admins/' + auth.uid).val() == true || root.child('users/webapp/admin_by_uid/' + auth.uid).val() == true)",
           ".indexOn": [
             "email"
           ],
           "$uid": {
             ".read": true,
-            ".write": "auth != null && root.child('admins/' + auth.uid).val() == true",
+            ".write": "auth != null && (root.child('admins/' + auth.uid).val() == true || root.child('users/webapp/admin_by_uid/' + auth.uid).val() == true)",
             ".indexOn": [
               "email"
             ],
@@ -49,15 +49,22 @@
             ]
           }
         },
+        "admin_by_uid": {
+          "$uid": {
+            ".read": "auth != null && (auth.uid == $uid || root.child('admins/' + auth.uid).val() == true)",
+            ".write": "auth != null && root.child('admins/' + auth.uid).val() == true",
+            ".validate": "newData.val() == true || newData.val() == null"
+          }
+        },
         "treasury": {
           ".read": true,
-          ".write": "auth != null && root.child('admins/' + auth.uid).val() == true",
+          ".write": "auth != null && (root.child('admins/' + auth.uid).val() == true || root.child('users/webapp/admin_by_uid/' + auth.uid).val() == true)",
           ".indexOn": [
             "email"
           ],
           "$uid": {
             ".read": true,
-            ".write": "auth != null && root.child('admins/' + auth.uid).val() == true",
+            ".write": "auth != null && (root.child('admins/' + auth.uid).val() == true || root.child('users/webapp/admin_by_uid/' + auth.uid).val() == true || data.child('uid').val() == auth.uid || (!data.exists() && newData.child('uid').val() == auth.uid))",
             ".indexOn": [
               "email"
             ],
@@ -66,13 +73,13 @@
         },
         "mho": {
           ".read": true,
-          ".write": "auth != null && root.child('admins/' + auth.uid).val() == true",
+          ".write": "auth != null && (root.child('admins/' + auth.uid).val() == true || root.child('users/webapp/admin_by_uid/' + auth.uid).val() == true)",
           ".indexOn": [
             "email"
           ],
           "$uid": {
             ".read": true,
-            ".write": "auth != null && root.child('admins/' + auth.uid).val() == true",
+            ".write": "auth != null && (root.child('admins/' + auth.uid).val() == true || root.child('users/webapp/admin_by_uid/' + auth.uid).val() == true)",
             ".indexOn": [
               "email"
             ],
@@ -92,7 +99,18 @@
           "client_uid"
         ],
         "$uid": {
-          ".validate": "newData.hasChildren(['uid', 'application_uid', 'fees']) || newData.hasChildren(['uid', 'client_uid', 'fees']) || newData.exists() == false"
+          ".validate": "newData.exists() == false || newData.hasChildren(['uid', 'application_uid']) || newData.hasChildren(['uid', 'client_uid'])"
+        }
+      },
+      "reassessment": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".indexOn": [
+          "application_uid",
+          "client_uid"
+        ],
+        "$uid": {
+          ".validate": "newData.exists() == false || newData.hasChildren(['uid', 'application_uid', 'previous_grand_total', 'updated_grand_total', 'difference_amount', 'difference_type']) || newData.hasChildren(['uid', 'client_uid', 'previous_grand_total', 'updated_grand_total', 'difference_amount', 'difference_type'])"
         }
       }
     },

@@ -7,7 +7,7 @@ import { getAuth, onAuthStateChanged, signOut } from "firebase/auth"
 import { app as firebaseApp } from "@/database/firebase"
 import { cn } from "@/lib/utils"
 
-type TreasuryNavKey = "dashboard" | "clients"
+type TreasuryNavKey = "dashboard" | "clients" | "reassessment"
 
 type TreasuryShellProps = {
   activeNav: TreasuryNavKey
@@ -19,6 +19,7 @@ type TreasuryShellProps = {
 const NAV_ITEMS: Array<{ key: TreasuryNavKey; label: string; href: string }> = [
   { key: "dashboard", label: "Dashboard", href: "/treasury/home" },
   { key: "clients", label: "Clients", href: "/treasury/clients" },
+  { key: "reassessment", label: "Re-Assessment", href: "/treasury/reassessment" },
 ]
 
 export default function TreasuryShell({ activeNav, title, description, children }: TreasuryShellProps) {
@@ -29,16 +30,60 @@ export default function TreasuryShell({ activeNav, title, description, children 
   const [email, setEmail] = useState("")
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    let cancelled = false
+    let initialAuthResolved = false
+
+    const applyAuthUser = (user: ReturnType<typeof getAuth>["currentUser"]) => {
+      if (cancelled) return
+
       if (!user) {
+        setEmail("")
+        setLoading(false)
         router.replace("/treasury")
         return
       }
+
       setEmail(user.email ?? "")
       setLoading(false)
-    })
+    }
 
-    return unsubscribe
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (user) => {
+        if (!initialAuthResolved) return
+        applyAuthUser(user)
+      },
+      () => {
+        if (!initialAuthResolved || cancelled) return
+        setEmail("")
+        setLoading(false)
+        router.replace("/treasury")
+      }
+    )
+
+    const waitForInitialAuthState = async () => {
+      try {
+        const authWithReady = auth as typeof auth & { authStateReady?: () => Promise<void> }
+        if (typeof authWithReady.authStateReady === "function") {
+          await authWithReady.authStateReady()
+        } else {
+          await new Promise((resolve) => setTimeout(resolve, 300))
+        }
+      } catch {
+        // Fall through and use the best available currentUser snapshot.
+      }
+
+      if (cancelled) return
+      initialAuthResolved = true
+      applyAuthUser(auth.currentUser)
+    }
+
+    void waitForInitialAuthState()
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [auth, router])
 
   const handleSignOut = async () => {

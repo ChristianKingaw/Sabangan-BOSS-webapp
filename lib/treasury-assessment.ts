@@ -35,6 +35,9 @@ export type TreasuryAssessmentRecord = {
   uid: string
   application_uid: string
   client_uid?: string
+  salary_amount?: string
+  gross_sales_amount?: string
+  capital_amount?: string
   cedula_no: string
   cedula_issued_at?: number | null
   or_no: string
@@ -48,6 +51,10 @@ export type TreasuryAssessmentRecord = {
 }
 
 const normalizeOptionalString = (value: unknown) => (typeof value === "string" ? value.trim() : "")
+const normalizeAmountInput = (value: unknown) => {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value)
+  return normalizeOptionalString(value)
+}
 
 const normalizeOptionalNumber = (value: unknown): number | null => {
   if (typeof value === "number" && Number.isFinite(value)) return value
@@ -133,6 +140,10 @@ export const normalizeTreasuryAssessmentRecord = (
     uid: normalizeOptionalString(payload?.uid) || key,
     application_uid: applicationUid,
     client_uid: legacyClientUid || undefined,
+    salary_amount: normalizeAmountInput(payload?.salary_amount ?? payload?.salaryAmount) || undefined,
+    gross_sales_amount:
+      normalizeAmountInput(payload?.gross_sales_amount ?? payload?.grossSalesAmount) || undefined,
+    capital_amount: normalizeAmountInput(payload?.capital_amount ?? payload?.capitalAmount) || undefined,
     cedula_no: normalizeOptionalString(payload?.cedula_no) || normalizeOptionalString(payload?.cedula),
     cedula_issued_at:
       normalizeOptionalNumber(payload?.cedula_issued_at) ?? normalizeOptionalNumber(payload?.cedulaIssuedAt),

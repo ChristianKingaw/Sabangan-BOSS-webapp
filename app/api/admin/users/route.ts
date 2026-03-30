@@ -25,6 +25,7 @@ const resolveBaseNamespace = () => {
 
 const BASE_NAMESPACE = resolveBaseNamespace()
 const ADMIN_COLLECTION = `${BASE_NAMESPACE}/admin`
+const ADMIN_BY_UID_COLLECTION = `${BASE_NAMESPACE}/admin_by_uid`
 
 const normalizeString = (value: unknown) => (typeof value === "string" ? value.trim() : "")
 
@@ -68,8 +69,14 @@ const rolePath = (role: ManagedRole) => `${BASE_NAMESPACE}/${role}`
 const isAdminAuthorized = async (uid: string, email: string) => {
   if (!uid) return false
 
-  const rootAdminSnapshot = await adminDb.ref(`admins/${uid}`).get()
+  const [rootAdminSnapshot, roleAdminSnapshot] = await Promise.all([
+    adminDb.ref(`admins/${uid}`).get(),
+    adminDb.ref(`${ADMIN_BY_UID_COLLECTION}/${uid}`).get(),
+  ])
   if (rootAdminSnapshot.val() === true) {
+    return true
+  }
+  if (roleAdminSnapshot.val() === true) {
     return true
   }
 
@@ -110,6 +117,14 @@ const requireAdmin = async (request: NextRequest) => {
       return { error: NextResponse.json({ error: "Forbidden." }, { status: 403 }) }
     }
 
+    // Keep a uid-based admin marker so rules can authorize role management
+    // without relying on email lookups.
+    try {
+      await adminDb.ref(`${ADMIN_BY_UID_COLLECTION}/${decoded.uid}`).set(true)
+    } catch (error) {
+      console.warn("Failed to sync admin_by_uid marker", error)
+    }
+
     return {
       admin: {
         uid: decoded.uid,
@@ -124,12 +139,37 @@ const requireAdmin = async (request: NextRequest) => {
 const getRoleRecordByEmail = async (role: ManagedRole, normalizedEmail: string) => {
   if (!normalizedEmail) return null
 
-  const snapshot = await adminDb
-    .ref(rolePath(role))
-    .orderByChild("email")
-    .equalTo(normalizedEmail)
-    .limitToFirst(1)
-    .get()
+  const findByScan = async () => {
+    const fullSnapshot = await adminDb.ref(rolePath(role)).get()
+    if (!fullSnapshot.exists()) {
+      return null
+    }
+
+    const node = (fullSnapshot.val() ?? {}) as Record<string, Record<string, unknown>>
+    for (const [id, value] of Object.entries(node)) {
+      const email = normalizeString(value?.email).toLowerCase()
+      if (email === normalizedEmail) {
+        return { id, value }
+      }
+    }
+
+    return null
+  }
+
+  let snapshot: Awaited<ReturnType<ReturnType<typeof adminDb.ref>["get"]>>
+  try {
+    snapshot = await adminDb
+      .ref(rolePath(role))
+      .orderByChild("email")
+      .equalTo(normalizedEmail)
+      .limitToFirst(1)
+      .get()
+  } catch (error) {
+    if (isMissingRoleEmailIndexError(error)) {
+      return findByScan()
+    }
+    throw error
+  }
 
   if (!snapshot.exists()) {
     return null

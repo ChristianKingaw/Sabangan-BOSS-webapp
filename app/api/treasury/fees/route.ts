@@ -9,6 +9,18 @@ const TREASURY_FEES_PATH = "Treasury/fees"
 const TREASURY_USERS_PATH = "users/webapp/treasury"
 
 const normalizeOptionalString = (value: unknown) => (typeof value === "string" ? value.trim() : "")
+const normalizeAmountInput = (value: unknown) => {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value)
+  return normalizeOptionalString(value)
+}
+
+const normalizeAssessmentStatus = (value: unknown) => {
+  const normalized = normalizeOptionalString(value).toLowerCase()
+  if (normalized === "paid" || normalized === "unpaid" || normalized === "ongoing") {
+    return normalized
+  }
+  return "ongoing"
+}
 
 const normalizeOptionalNumber = (value: unknown): number | null => {
   if (typeof value === "number" && Number.isFinite(value)) return value
@@ -88,12 +100,10 @@ export async function POST(request: NextRequest) {
 
     const cedulaNumber = normalizeOptionalString(body?.cedulaNumber)
     const officialReceiptNumber = normalizeOptionalString(body?.officialReceiptNumber)
-    if (!cedulaNumber || !officialReceiptNumber) {
-      return NextResponse.json(
-        { error: "Cedula Number and Official Receipt Number are required." },
-        { status: 400 }
-      )
-    }
+    const assessmentStatus = normalizeAssessmentStatus(body?.assessmentStatus)
+    const salaryAmount = normalizeAmountInput(body?.salaryAmount)
+    const grossSalesAmount = normalizeAmountInput(body?.grossSalesAmount)
+    const capitalAmount = normalizeAmountInput(body?.capitalAmount)
 
     const fees = normalizeFees(body?.fees)
     const additionalFees = normalizeAdditionalFees(body?.additionalFees)
@@ -144,6 +154,10 @@ export async function POST(request: NextRequest) {
     const payload = {
       application_uid: applicationUid,
       client_uid: applicationUid,
+      assessment_status: assessmentStatus,
+      salary_amount: salaryAmount,
+      gross_sales_amount: grossSalesAmount,
+      capital_amount: capitalAmount,
       cedula_no: cedulaNumber,
       cedula_issued_at: cedulaIssuedAt,
       or_no: officialReceiptNumber,

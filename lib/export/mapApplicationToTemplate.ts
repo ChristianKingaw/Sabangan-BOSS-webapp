@@ -55,6 +55,7 @@ export type TemplateData = {
   lastName: string
   firstName: string
   middleName: string
+  age: string
   businessName: string
   tradeName: string
 
@@ -247,6 +248,76 @@ function resolveApplicantNameParts(form: Record<string, unknown>): ApplicantName
   }
 }
 
+function parseAgeNumber(raw: unknown): number | null {
+  if (raw === undefined || raw === null || raw === "") return null
+
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw)) return null
+    const normalized = Math.floor(raw)
+    if (normalized < 0 || normalized > 150) return null
+    return normalized
+  }
+
+  const value = normalizeWhitespace(String(raw))
+  if (!value) return null
+
+  const match = value.match(/-?\d+(\.\d+)?/)
+  if (!match) return null
+
+  const parsed = Number(match[0])
+  if (!Number.isFinite(parsed)) return null
+
+  const normalized = Math.floor(parsed)
+  if (normalized < 0 || normalized > 150) return null
+  return normalized
+}
+
+function calculateAgeFromBirthdate(raw: unknown): number | null {
+  if (raw === undefined || raw === null || raw === "") return null
+
+  const date = new Date(String(raw))
+  if (Number.isNaN(date.getTime())) return null
+
+  const today = new Date()
+  if (date.getTime() > today.getTime()) return null
+
+  let age = today.getFullYear() - date.getFullYear()
+  const monthDiff = today.getMonth() - date.getMonth()
+  const isBeforeBirthday = monthDiff < 0 || (monthDiff === 0 && today.getDate() < date.getDate())
+  if (isBeforeBirthday) {
+    age -= 1
+  }
+
+  if (age < 0 || age > 150) return null
+  return age
+}
+
+function resolveApplicantAge(form: Record<string, unknown>): string {
+  const explicitAgeKeys = ["age", "applicantAge", "ownerAge"] as const
+  for (const key of explicitAgeKeys) {
+    const parsed = parseAgeNumber(form[key])
+    if (parsed !== null) {
+      return String(parsed)
+    }
+  }
+
+  const birthdateKeys = [
+    "birthdate",
+    "birthDate",
+    "dateOfBirth",
+    "dob",
+    "birthday",
+  ] as const
+  for (const key of birthdateKeys) {
+    const parsed = calculateAgeFromBirthdate(form[key])
+    if (parsed !== null) {
+      return String(parsed)
+    }
+  }
+
+  return ""
+}
+
 /**
  * Convert a number to English words (handles integer part up to trillions)
  * and returns "Words and NN/100" for cents.
@@ -334,6 +405,7 @@ export function mapApplicationToTemplate(
   // Resolve name parts with fallback support so sworn templates always receive values.
   const nameParts = resolveApplicantNameParts(form)
   const fullName = nameParts.fullName
+  const age = resolveApplicantAge(form)
   const businessAddressRaw =
     form.businessAddress ?? form["businessAdress"] ?? form["address"] ?? ""
   const resolvedBusinessAddress = formatAddress(businessAddressRaw)
@@ -402,6 +474,7 @@ export function mapApplicationToTemplate(
     lastName: nameParts.lastName,
     firstName: nameParts.firstName,
     middleName: nameParts.middleName,
+    age,
     applicantName: fullName,
     fullName,
     businessName: String(form.businessName ?? ""),

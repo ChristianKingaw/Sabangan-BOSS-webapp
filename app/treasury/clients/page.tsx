@@ -1,9 +1,10 @@
 
 "use client"
 
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { getAuth, onAuthStateChanged, type User } from "firebase/auth"
-import { onValue, ref } from "firebase/database"
+import { get, onValue, ref } from "firebase/database"
 import TreasuryShell from "@/components/treasury-shell"
 import {
   Dialog,
@@ -31,6 +32,8 @@ import { toast } from "sonner"
 type SaveFeedback = { type: "success" | "error"; message: string }
 type FeeLineInput = { amount: string; penalty: string }
 type AdditionalFeeInput = { id: string; name: string; amount: string; penalty: string }
+type AssessmentBasisInput = { grossSales: string; capital: string }
+type TreasuryAssessmentStatus = "paid" | "unpaid" | "ongoing"
 type MobileFeeBreakdownLine = { label: string; amount: number }
 type MobileCalculatedFeeReference = {
   applicationUid: string
@@ -125,6 +128,8 @@ type FeeSection = (typeof FEE_DEFINITIONS)[number]["section"]
 type ClientAssessmentInputs = {
   cedula: string
   officialReceipt: string
+  assessmentStatus: TreasuryAssessmentStatus
+  assessmentBasis: AssessmentBasisInput
   fees: Record<FeeKey, FeeLineInput>
   additionalFees: AdditionalFeeInput[]
 }
@@ -136,6 +141,7 @@ const FEE_ROW_INDEX_BY_KEY = FEE_DEFINITIONS.reduce((accumulator, item, index) =
   accumulator[item.key] = index
   return accumulator
 }, {} as Record<FeeKey, number>)
+const BUSINESS_TAX_FEE_KEY: FeeKey = "gross_sales_tax"
 
 const ESTIMATED_TREASURY_FEE_LABELS: Record<string, string> = {
   mayors_permit: "Mayor's Permit",
@@ -150,6 +156,30 @@ const ESTIMATED_TREASURY_FEE_LABELS: Record<string, string> = {
 
 const normalizeOptionalStringValue = (value: unknown) =>
   typeof value === "string" ? value.trim() : ""
+
+const normalizeTreasuryAssessmentStatus = (value: unknown): TreasuryAssessmentStatus => {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : ""
+  if (normalized === "paid" || normalized === "unpaid") return normalized
+  return "ongoing"
+}
+
+const isPermissionDeniedError = (error: unknown) => {
+  const node = (error ?? {}) as { code?: unknown; message?: unknown }
+  const code = typeof node.code === "string" ? node.code.toLowerCase() : ""
+  const message = typeof node.message === "string" ? node.message.toLowerCase() : ""
+  return code.includes("permission_denied") || message.includes("permission denied")
+}
+
+const getTreasuryAssessmentStatusLabel = (value: TreasuryAssessmentStatus) => {
+  if (value === "paid") return "Paid"
+  if (value === "unpaid") return "Unpaid"
+  return "Ongoing"
+}
+
+const getApplicationTypeBadgeClassName = (value: string) =>
+  value === "Renewal"
+    ? "border-indigo-400 bg-indigo-100 text-indigo-900"
+    : "border-emerald-400 bg-emerald-100 text-emerald-900"
 
 const normalizeOptionalNumberValue = (value: unknown): number | null => {
   if (typeof value === "number" && Number.isFinite(value)) return value
@@ -254,6 +284,36 @@ const normalizeEstimatedFeeReference = (
   }
 }
 
+const normalizeEstimatedFeeRecordMap = (value: unknown) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {} as Record<string, MobileCalculatedFeeReference>
+  }
+
+  const node = value as Record<string, unknown>
+  const byApplication: Record<string, MobileCalculatedFeeReference> = {}
+
+  Object.entries(node).forEach(([recordUid, payload]) => {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return
+    }
+
+    const normalized = normalizeEstimatedFeeReference(recordUid, payload as Record<string, unknown>)
+    if (!normalized) return
+
+    const existing = byApplication[normalized.applicationUid]
+    if (!existing) {
+      byApplication[normalized.applicationUid] = normalized
+      return
+    }
+
+    if ((normalized.computedAt ?? 0) >= (existing.computedAt ?? 0)) {
+      byApplication[normalized.applicationUid] = normalized
+    }
+  })
+
+  return byApplication
+}
+
 const normalizeLegacyBusinessFeeReference = (
   appId: string,
   payload: Record<string, unknown>
@@ -312,9 +372,16 @@ const createEmptyFeeInputs = (): Record<FeeKey, FeeLineInput> =>
     return accumulator
   }, {} as Record<FeeKey, FeeLineInput>)
 
+const createEmptyAssessmentBasisInputs = (): AssessmentBasisInput => ({
+  grossSales: "",
+  capital: "",
+})
+
 const createEmptyAssessmentInputs = (): ClientAssessmentInputs => ({
   cedula: "",
   officialReceipt: "",
+  assessmentStatus: "unpaid",
+  assessmentBasis: createEmptyAssessmentBasisInputs(),
   fees: createEmptyFeeInputs(),
   additionalFees: [],
 })
@@ -328,9 +395,21 @@ const createAdditionalFeeInput = (seed?: Partial<AdditionalFeeInput>): Additiona
   penalty: seed?.penalty ?? "",
 })
 
+const cloneFeeInputs = (fees: Record<FeeKey, FeeLineInput>): Record<FeeKey, FeeLineInput> =>
+  FEE_DEFINITIONS.reduce((accumulator, item) => {
+    const row = fees[item.key]
+    accumulator[item.key] = { amount: row?.amount ?? "", penalty: row?.penalty ?? "" }
+    return accumulator
+  }, {} as Record<FeeKey, FeeLineInput>)
+
 const cloneAssessmentInputs = (value: ClientAssessmentInputs): ClientAssessmentInputs => ({
   cedula: value.cedula,
   officialReceipt: value.officialReceipt,
+  assessmentStatus: value.assessmentStatus,
+  assessmentBasis: {
+    grossSales: value.assessmentBasis.grossSales,
+    capital: value.assessmentBasis.capital,
+  },
   fees: FEE_DEFINITIONS.reduce((accumulator, item) => {
     const row = value.fees[item.key]
     accumulator[item.key] = { amount: row?.amount ?? "", penalty: row?.penalty ?? "" }
@@ -338,6 +417,22 @@ const cloneAssessmentInputs = (value: ClientAssessmentInputs): ClientAssessmentI
   }, {} as Record<FeeKey, FeeLineInput>),
   additionalFees: value.additionalFees.map((fee) => ({ ...fee })),
 })
+
+const serializeAssessmentInputsForComparison = (value: ClientAssessmentInputs) => {
+  const normalized = normalizeAssessmentInputs(value)
+  return JSON.stringify({
+    cedula: normalized.cedula,
+    officialReceipt: normalized.officialReceipt,
+    assessmentStatus: normalized.assessmentStatus,
+    assessmentBasis: normalized.assessmentBasis,
+    fees: normalized.fees,
+    additionalFees: normalized.additionalFees.map((fee) => ({
+      name: fee.name,
+      amount: fee.amount,
+      penalty: fee.penalty,
+    })),
+  })
+}
 
 const parseOptionalNumber = (value: string): number | null => {
   const trimmed = value.trim()
@@ -352,6 +447,104 @@ const formatCurrency = (value: number) =>
 const formatNumberCell = (value: string) => {
   const parsed = parseOptionalNumber(value)
   return parsed === null ? "-" : formatCurrency(parsed)
+}
+
+const formatBasisCell = (value: string) => {
+  const trimmed = value.trim()
+  if (!trimmed) return "-"
+  const parsed = parseOptionalNumber(trimmed)
+  return parsed === null ? trimmed : formatCurrency(parsed)
+}
+
+const toAmountInputString = (value: unknown) => {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value)
+  if (typeof value === "string") return value.trim()
+  return ""
+}
+
+const getAssessmentBasisFromForm = (record: BusinessApplicationRecord): AssessmentBasisInput => {
+  const form = (record.form ?? {}) as Record<string, unknown>
+  const activities = Array.isArray(form.activities) ? form.activities : []
+  const pickFirstFilled = (values: unknown[]) => {
+    for (const value of values) {
+      const normalized = toAmountInputString(value)
+      if (normalized) return normalized
+    }
+    return ""
+  }
+  const pickHighestActivityAmount = (field: "grossSales" | "capitalization") => {
+    let highest: number | null = null
+    let fallback = ""
+
+    activities.forEach((entry) => {
+      const activity = (entry ?? {}) as Record<string, unknown>
+      const normalized = toAmountInputString(activity[field])
+      if (!normalized) return
+
+      const numeric = parseOptionalNumber(normalized)
+      if (numeric === null) {
+        if (!fallback) fallback = normalized
+        return
+      }
+
+      if (highest === null || numeric > highest) {
+        highest = numeric
+      }
+    })
+
+    if (highest !== null) return String(highest)
+    return fallback
+  }
+
+  return {
+    grossSales:
+      pickFirstFilled([form.grossSales, form.grossTotal, form.grossTotalInt, form.basisTotal, form.taxBasisTotal]) ||
+      pickHighestActivityAmount("grossSales"),
+    capital:
+      pickFirstFilled([form.capitalization, form.capitalTotal]) || pickHighestActivityAmount("capitalization"),
+  }
+}
+
+const getBusinessBasisFieldByApplicationType = (
+  applicationType: BusinessApplicationRecord["applicationType"] | undefined
+): keyof Pick<AssessmentBasisInput, "grossSales" | "capital"> =>
+  applicationType === "New" ? "capital" : "grossSales"
+
+const enforceBusinessBasisByApplicationType = (
+  applicationType: BusinessApplicationRecord["applicationType"] | undefined,
+  basis: AssessmentBasisInput
+): AssessmentBasisInput => {
+  const normalized = {
+    grossSales: basis.grossSales.trim(),
+    capital: basis.capital.trim(),
+  }
+  const basisField = getBusinessBasisFieldByApplicationType(applicationType)
+
+  if (basisField === "capital") {
+    return {
+      ...normalized,
+      grossSales: "",
+    }
+  }
+
+  return {
+    ...normalized,
+    capital: "",
+  }
+}
+
+const enforceBusinessTaxByApplicationType = (
+  applicationType: BusinessApplicationRecord["applicationType"] | undefined,
+  fees: Record<FeeKey, FeeLineInput>
+): Record<FeeKey, FeeLineInput> => {
+  const normalizedFees = cloneFeeInputs(fees)
+
+  if (applicationType === "Renewal") {
+    return normalizedFees
+  }
+
+  normalizedFees[BUSINESS_TAX_FEE_KEY] = { amount: "", penalty: "" }
+  return normalizedFees
 }
 
 const formatDateTimeCell = (value: number | null) => {
@@ -414,6 +607,11 @@ const computeAssessmentTotals = (fees: Record<FeeKey, FeeLineInput>, additionalF
 const normalizeAssessmentInputs = (value: ClientAssessmentInputs): ClientAssessmentInputs => ({
   cedula: value.cedula.trim(),
   officialReceipt: value.officialReceipt.trim(),
+  assessmentStatus: normalizeTreasuryAssessmentStatus(value.assessmentStatus),
+  assessmentBasis: {
+    grossSales: value.assessmentBasis.grossSales.trim(),
+    capital: value.assessmentBasis.capital.trim(),
+  },
   fees: FEE_DEFINITIONS.reduce((accumulator, item) => {
     const row = value.fees[item.key]
     accumulator[item.key] = { amount: row?.amount.trim() ?? "", penalty: row?.penalty.trim() ?? "" }
@@ -438,6 +636,9 @@ const mapRecordToInputs = (record: TreasuryFeeAssessmentRecord | undefined): Cli
 
   next.cedula = typeof record.cedula_no === "string" ? record.cedula_no : ""
   next.officialReceipt = typeof record.or_no === "string" ? record.or_no : ""
+  next.assessmentStatus = normalizeTreasuryAssessmentStatus(record.assessment_status)
+  next.assessmentBasis.grossSales = toAmountInputString(record.gross_sales_amount)
+  next.assessmentBasis.capital = toAmountInputString(record.capital_amount)
 
   FEE_DEFINITIONS.forEach((item) => {
     const feeLine = record.fees?.[item.key]
@@ -459,11 +660,32 @@ const mapRecordToInputs = (record: TreasuryFeeAssessmentRecord | undefined): Cli
 }
 
 const getApplicationUid = (record: BusinessApplicationRecord) => record.id
-const getApplicationDateTimestamp = (record: BusinessApplicationRecord) => {
-  if (!record.applicationDate) return null
-  const date = new Date(record.applicationDate)
-  const timestamp = date.getTime()
+const parseApplicationDateTimestamp = (value?: string) => {
+  const trimmed = (value ?? "").trim()
+  if (!trimmed) return null
+
+  const localDateMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (localDateMatch) {
+    const year = Number(localDateMatch[1])
+    const month = Number(localDateMatch[2])
+    const day = Number(localDateMatch[3])
+    const localDate = new Date(year, month - 1, day)
+    const timestamp = localDate.getTime()
+    return Number.isNaN(timestamp) ? null : timestamp
+  }
+
+  const parsed = new Date(trimmed)
+  const timestamp = parsed.getTime()
   return Number.isNaN(timestamp) ? null : timestamp
+}
+
+const getApplicationDateTimestamp = (record: BusinessApplicationRecord) => {
+  const parsedApplicationDate = parseApplicationDateTimestamp(record.applicationDate)
+  if (parsedApplicationDate !== null) return parsedApplicationDate
+  if (typeof record.submittedAt === "number" && Number.isFinite(record.submittedAt)) {
+    return record.submittedAt
+  }
+  return null
 }
 const getApplicationYear = (record: BusinessApplicationRecord) => {
   const timestamp = getApplicationDateTimestamp(record)
@@ -486,7 +708,7 @@ const parseAmountLike = (value: unknown) => {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-const getApplicantNameKey = (record: BusinessApplicationRecord) => {
+const getApplicantTaxpayerKey = (record: BusinessApplicationRecord) => {
   const form = (record.form ?? {}) as Record<string, unknown>
   const first = normalizeNameToken(form.firstName)
   const middle = normalizeNameToken(form.middleName)
@@ -495,7 +717,16 @@ const getApplicantNameKey = (record: BusinessApplicationRecord) => {
     return `${first}|${middle}|${last}`
   }
 
-  // Avoid accidentally grouping unknown-name records together.
+  const applicantUidCandidates = [
+    (record.applicantUid ?? "").toString().trim(),
+    (record.form?.applicantUid ?? "").toString().trim(),
+  ].filter(Boolean)
+
+  if (applicantUidCandidates.length > 0) {
+    return `applicant:${applicantUidCandidates[0].toLowerCase()}`
+  }
+
+  // Avoid accidentally grouping unknown-name, unknown-uid records together.
   return `application:${getApplicationUid(record)}`
 }
 
@@ -530,30 +761,30 @@ const getComparableSalary = (record: BusinessApplicationRecord) => {
 }
 
 type ApplicantGroupContext = {
-  nameKey: string
+  taxpayerKey: string
   applicationUids: string[]
   primaryApplicationUid: string
 }
 
-const getSharedDocumentValues = (
+const getSharedCedulaValue = (
   applicationUids: string[],
   primaryApplicationUid: string,
   inputsByApplication: Record<string, ClientAssessmentInputs>
 ) => {
   const primary = inputsByApplication[primaryApplicationUid]
-  if (primary && (primary.cedula.trim() || primary.officialReceipt.trim())) {
-    return { cedula: primary.cedula, officialReceipt: primary.officialReceipt }
+  if (primary?.cedula.trim()) {
+    return primary.cedula
   }
 
   for (const applicationUid of applicationUids) {
     const candidate = inputsByApplication[applicationUid]
     if (!candidate) continue
-    if (candidate.cedula.trim() || candidate.officialReceipt.trim()) {
-      return { cedula: candidate.cedula, officialReceipt: candidate.officialReceipt }
+    if (candidate.cedula.trim()) {
+      return candidate.cedula
     }
   }
 
-  return { cedula: "", officialReceipt: "" }
+  return ""
 }
 
 const getAssessmentForClient = (
@@ -594,8 +825,8 @@ const renderFeeSectionRows = (
 
     return (
       <tr key={item.key}>
-        <td className="border-b border-r border-slate-300 px-3 py-2 text-slate-800">{item.label}</td>
-        <td className="border-b border-r border-slate-300 px-3 py-2 text-right tabular-nums text-slate-700 whitespace-nowrap">
+        <td className="border-b border-r border-slate-500 px-3 py-2 text-slate-900">{item.label}</td>
+        <td className="border-b border-r border-slate-500 px-3 py-2 text-right tabular-nums text-slate-800 whitespace-nowrap">
           {isEditing ? (
             <input
               type="text"
@@ -605,13 +836,13 @@ const renderFeeSectionRows = (
               onKeyDown={onInputKeyDown}
               data-nav-row={rowIndex}
               data-nav-col={1}
-              className="h-9 w-full rounded-md border border-slate-300 px-2 text-right text-sm outline-none ring-emerald-200 focus:ring"
+              className="h-9 w-full rounded-md border border-slate-400 px-2 text-right text-sm outline-none ring-emerald-300 focus:ring"
             />
           ) : (
             formatNumberCell(row.amount)
           )}
         </td>
-        <td className="border-b border-r border-slate-300 px-3 py-2 text-right tabular-nums text-slate-700 whitespace-nowrap">
+        <td className="border-b border-r border-slate-500 px-3 py-2 text-right tabular-nums text-slate-800 whitespace-nowrap">
           {isEditing ? (
             <input
               type="text"
@@ -621,13 +852,13 @@ const renderFeeSectionRows = (
               onKeyDown={onInputKeyDown}
               data-nav-row={rowIndex}
               data-nav-col={2}
-              className="h-9 w-full rounded-md border border-slate-300 px-2 text-right text-sm outline-none ring-emerald-200 focus:ring"
+              className="h-9 w-full rounded-md border border-slate-400 px-2 text-right text-sm outline-none ring-emerald-300 focus:ring"
             />
           ) : (
             formatNumberCell(row.penalty)
           )}
         </td>
-        <td className="border-b border-slate-300 px-3 py-2 text-right tabular-nums text-slate-700 whitespace-nowrap">
+        <td className="border-b border-slate-500 px-3 py-2 text-right tabular-nums text-slate-800 whitespace-nowrap">
           {hasValue ? formatCurrency(lineTotals[item.key]) : "-"}
         </td>
       </tr>
@@ -649,7 +880,7 @@ const renderAdditionalFeeRows = (
 
     return (
       <tr key={fee.id}>
-        <td className="border-b border-r border-slate-300 px-3 py-2 text-slate-800">
+        <td className="border-b border-r border-slate-500 px-3 py-2 text-slate-900">
           {isEditing ? (
             <div className="flex items-center gap-2">
               <input
@@ -660,12 +891,12 @@ const renderAdditionalFeeRows = (
                 data-nav-row={rowIndex}
                 data-nav-col={0}
                 placeholder="Fee name"
-                className="h-9 w-full rounded-md border border-slate-300 px-2 text-sm outline-none ring-emerald-200 focus:ring"
+                className="h-9 w-full rounded-md border border-slate-400 px-2 text-sm outline-none ring-emerald-300 focus:ring"
               />
               <button
                 type="button"
                 onClick={() => onRemoveAdditionalFee(fee.id)}
-                className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 px-3 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                className="inline-flex h-9 items-center justify-center rounded-md border border-slate-400 px-3 text-xs font-medium text-slate-700 hover:bg-slate-200"
               >
                 Remove
               </button>
@@ -674,7 +905,7 @@ const renderAdditionalFeeRows = (
             fee.name.trim() || "-"
           )}
         </td>
-        <td className="border-b border-r border-slate-300 px-3 py-2 text-right tabular-nums text-slate-700 whitespace-nowrap">
+        <td className="border-b border-r border-slate-500 px-3 py-2 text-right tabular-nums text-slate-800 whitespace-nowrap">
           {isEditing ? (
             <input
               type="text"
@@ -684,13 +915,13 @@ const renderAdditionalFeeRows = (
               onKeyDown={onInputKeyDown}
               data-nav-row={rowIndex}
               data-nav-col={1}
-              className="h-9 w-full rounded-md border border-slate-300 px-2 text-right text-sm outline-none ring-emerald-200 focus:ring"
+              className="h-9 w-full rounded-md border border-slate-400 px-2 text-right text-sm outline-none ring-emerald-300 focus:ring"
             />
           ) : (
             formatNumberCell(fee.amount)
           )}
         </td>
-        <td className="border-b border-r border-slate-300 px-3 py-2 text-right tabular-nums text-slate-700 whitespace-nowrap">
+        <td className="border-b border-r border-slate-500 px-3 py-2 text-right tabular-nums text-slate-800 whitespace-nowrap">
           {isEditing ? (
             <input
               type="text"
@@ -700,13 +931,13 @@ const renderAdditionalFeeRows = (
               onKeyDown={onInputKeyDown}
               data-nav-row={rowIndex}
               data-nav-col={2}
-              className="h-9 w-full rounded-md border border-slate-300 px-2 text-right text-sm outline-none ring-emerald-200 focus:ring"
+              className="h-9 w-full rounded-md border border-slate-400 px-2 text-right text-sm outline-none ring-emerald-300 focus:ring"
             />
           ) : (
             formatNumberCell(fee.penalty)
           )}
         </td>
-        <td className="border-b border-slate-300 px-3 py-2 text-right tabular-nums text-slate-700 whitespace-nowrap">
+        <td className="border-b border-slate-500 px-3 py-2 text-right tabular-nums text-slate-800 whitespace-nowrap">
           {hasValue ? formatCurrency(additionalLineTotals[fee.id] ?? 0) : "-"}
         </td>
       </tr>
@@ -715,6 +946,7 @@ const renderAdditionalFeeRows = (
 
 export default function TreasuryClientsPage() {
   const auth = useMemo(() => getAuth(firebaseApp), [])
+  const searchParams = useSearchParams()
   const [clients, setClients] = useState<BusinessApplicationRecord[]>([])
   const [authReady, setAuthReady] = useState(false)
   const [authUser, setAuthUser] = useState<User | null>(null)
@@ -727,14 +959,22 @@ export default function TreasuryClientsPage() {
   const [savingClientUid, setSavingClientUid] = useState<string | null>(null)
   const [selectedClient, setSelectedClient] = useState<BusinessApplicationRecord | null>(null)
   const [editorValues, setEditorValues] = useState<ClientAssessmentInputs>(createEmptyAssessmentInputs)
+  const [dialogInitialValues, setDialogInitialValues] = useState<ClientAssessmentInputs>(createEmptyAssessmentInputs)
   const [isDialogEditing, setIsDialogEditing] = useState(false)
   const [dialogFeedback, setDialogFeedback] = useState<SaveFeedback | null>(null)
   const [estimatedFeesByApplication, setEstimatedFeesByApplication] = useState<
     Record<string, MobileCalculatedFeeReference>
   >({})
+  const estimatedFeesAccessDeniedRef = useRef(false)
+  const autoPreviewHandledRef = useRef("")
   const [legacyMobileFeesByApplication, setLegacyMobileFeesByApplication] = useState<
     Record<string, MobileCalculatedFeeReference>
   >({})
+  const previewApplicationUid = useMemo(() => {
+    const shouldPreview = searchParams.get("preview") === "1"
+    if (!shouldPreview) return ""
+    return (searchParams.get("applicationId") ?? "").trim()
+  }, [searchParams])
 
   const selectedApplicationUid = selectedClient ? getApplicationUid(selectedClient) : null
   const dialogIsSaving = selectedApplicationUid ? savingClientUid === selectedApplicationUid : false
@@ -742,14 +982,14 @@ export default function TreasuryClientsPage() {
     const grouped = new Map<string, BusinessApplicationRecord[]>()
 
     clients.forEach((client) => {
-      const nameKey = getApplicantNameKey(client)
-      const current = grouped.get(nameKey) ?? []
+      const taxpayerKey = getApplicantTaxpayerKey(client)
+      const current = grouped.get(taxpayerKey) ?? []
       current.push(client)
-      grouped.set(nameKey, current)
+      grouped.set(taxpayerKey, current)
     })
 
     const result: Record<string, ApplicantGroupContext> = {}
-    grouped.forEach((records, nameKey) => {
+    grouped.forEach((records, taxpayerKey) => {
       const sorted = [...records].sort((a, b) => {
         const salaryDiff = getComparableSalary(b) - getComparableSalary(a)
         if (salaryDiff !== 0) return salaryDiff
@@ -764,7 +1004,7 @@ export default function TreasuryClientsPage() {
       const applicationUids = records.map((record) => getApplicationUid(record))
       applicationUids.forEach((applicationUid) => {
         result[applicationUid] = {
-          nameKey,
+          taxpayerKey,
           applicationUids,
           primaryApplicationUid,
         }
@@ -772,6 +1012,12 @@ export default function TreasuryClientsPage() {
     })
 
     return result
+  }, [clients])
+  const clientByApplicationUid = useMemo(() => {
+    return clients.reduce((accumulator, client) => {
+      accumulator[getApplicationUid(client)] = client
+      return accumulator
+    }, {} as Record<string, BusinessApplicationRecord>)
   }, [clients])
   const displayInputsByApplication = useMemo(() => {
     const next: Record<string, ClientAssessmentInputs> = {}
@@ -784,7 +1030,7 @@ export default function TreasuryClientsPage() {
         return
       }
 
-      const sharedDocuments = getSharedDocumentValues(
+      const sharedCedula = getSharedCedulaValue(
         group.applicationUids,
         group.primaryApplicationUid,
         inputsByClient
@@ -794,15 +1040,16 @@ export default function TreasuryClientsPage() {
         const primary = inputsByClient[applicationUid] ?? EMPTY_ASSESSMENT_INPUTS
         next[applicationUid] = {
           ...cloneAssessmentInputs(primary),
-          cedula: sharedDocuments.cedula,
-          officialReceipt: sharedDocuments.officialReceipt,
+          cedula: sharedCedula,
         }
         return
       }
 
       const nonPrimary = createEmptyAssessmentInputs()
-      nonPrimary.cedula = sharedDocuments.cedula
-      nonPrimary.officialReceipt = sharedDocuments.officialReceipt
+      const existingNonPrimary = inputsByClient[applicationUid] ?? EMPTY_ASSESSMENT_INPUTS
+      nonPrimary.cedula = sharedCedula
+      nonPrimary.officialReceipt = existingNonPrimary.officialReceipt
+      nonPrimary.assessmentStatus = existingNonPrimary.assessmentStatus
       next[applicationUid] = nonPrimary
     })
 
@@ -821,6 +1068,12 @@ export default function TreasuryClientsPage() {
       editorValues.additionalFees.some((fee) => Boolean(fee.amount.trim() || fee.penalty.trim())),
     [editorValues.fees, editorValues.additionalFees]
   )
+  const dialogHasUnsavedChanges = useMemo(() => {
+    return (
+      serializeAssessmentInputsForComparison(editorValues) !==
+      serializeAssessmentInputsForComparison(dialogInitialValues)
+    )
+  }, [editorValues, dialogInitialValues])
   const selectedMobileFeeReference = useMemo(() => {
     if (!selectedClient) return null
 
@@ -850,6 +1103,44 @@ export default function TreasuryClientsPage() {
     estimatedFeesByApplication,
     legacyMobileFeesByApplication,
   ])
+  const selectedBusinessBasisField = getBusinessBasisFieldByApplicationType(selectedClient?.applicationType)
+  const selectedBusinessBasisLabel =
+    selectedBusinessBasisField === "capital" ? "Capitalization (New Business)" : "Gross Sales (Renewal)"
+  const assessmentBasisBaseNavRow = FEE_DEFINITIONS.length + editorValues.additionalFees.length
+  const assessmentBasisRowCount = 1
+  const cedulaNavRow = assessmentBasisBaseNavRow + assessmentBasisRowCount
+  const officialReceiptNavRow = cedulaNavRow + 1
+  const selectedBusinessBasisNote =
+    selectedBusinessBasisField === "capital"
+      ? "For New businesses, basis uses capitalization."
+      : "For Renewal businesses, basis uses gross sales."
+
+  const fetchLatestEstimatedFees = useCallback(async () => {
+    if (!authReady || !authUser) {
+      setEstimatedFeesByApplication({})
+      return
+    }
+    if (estimatedFeesAccessDeniedRef.current) {
+      return
+    }
+
+    try {
+      const directSnapshot = await get(ref(realtimeDb, ESTIMATED_FEES_PATH))
+      const directNode = directSnapshot.exists() ? (directSnapshot.val() as unknown) : {}
+      setEstimatedFeesByApplication(normalizeEstimatedFeeRecordMap(directNode))
+    } catch (error) {
+      if (isPermissionDeniedError(error)) {
+        estimatedFeesAccessDeniedRef.current = true
+        setEstimatedFeesByApplication({})
+        return
+      }
+      setEstimatedFeesByApplication({})
+      console.warn(
+        "Direct mobile-calculated estimated fees are unavailable; using legacy references.",
+        error
+      )
+    }
+  }, [authReady, authUser])
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -933,80 +1224,8 @@ export default function TreasuryClientsPage() {
   }, [authReady, authUser])
 
   useEffect(() => {
-    if (!authReady || !authUser) {
-      setEstimatedFeesByApplication({})
-      return
-    }
-
-    let cancelled = false
-
-    const loadEstimatedFees = async () => {
-      try {
-        const liveUser = auth.currentUser
-        if (!liveUser) {
-          if (!cancelled) setEstimatedFeesByApplication({})
-          return
-        }
-
-        const authIdToken = await liveUser.getIdToken()
-        const response = await fetch("/api/treasury/mobile-estimated-fees", {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${authIdToken}`,
-          },
-          cache: "no-store",
-        })
-
-        let body: Record<string, unknown> = {}
-        try {
-          body = (await response.json()) as Record<string, unknown>
-        } catch {
-          body = {}
-        }
-
-        if (!response.ok) {
-          throw new Error(
-            String(
-              body.error ?? "Unable to load mobile-calculated estimated fees."
-            )
-          )
-        }
-
-        const node = (body.records ?? {}) as Record<
-          string,
-          Record<string, unknown>
-        >
-        const byApplication: Record<string, MobileCalculatedFeeReference> = {}
-
-        Object.entries(node).forEach(([applicationUid, payload]) => {
-          const normalized = normalizeEstimatedFeeReference(
-            applicationUid,
-            payload
-          )
-          if (!normalized) return
-          byApplication[normalized.applicationUid] = normalized
-        })
-
-        if (!cancelled) {
-          setEstimatedFeesByApplication(byApplication)
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setEstimatedFeesByApplication({})
-        }
-        console.warn(
-          "Mobile-calculated estimated fees are unavailable for this treasury session.",
-          error
-        )
-      }
-    }
-
-    void loadEstimatedFees()
-
-    return () => {
-      cancelled = true
-    }
-  }, [auth, authReady, authUser])
+    void fetchLatestEstimatedFees()
+  }, [fetchLatestEstimatedFees])
 
   useEffect(() => {
     setInputsByClient(() => {
@@ -1053,27 +1272,176 @@ export default function TreasuryClientsPage() {
       })
   }, [clients, searchQuery, selectedYear])
 
-  const openClientPreview = (record: BusinessApplicationRecord) => {
+  const openClientPreview = async (record: BusinessApplicationRecord) => {
+    await fetchLatestEstimatedFees()
+
     const applicationUid = getApplicationUid(record)
     const group = applicantGroupsByApplication[applicationUid]
     const sourceUid = group?.primaryApplicationUid ?? applicationUid
     const existing = displayInputsByApplication[sourceUid] ?? EMPTY_ASSESSMENT_INPUTS
+    const selectedRowValues = displayInputsByApplication[applicationUid] ?? EMPTY_ASSESSMENT_INPUTS
+    const previewValues = cloneAssessmentInputs(existing)
+    const fallbackAssessmentBasis = getAssessmentBasisFromForm(record)
+    previewValues.assessmentBasis = enforceBusinessBasisByApplicationType(record.applicationType, {
+      grossSales: previewValues.assessmentBasis.grossSales || fallbackAssessmentBasis.grossSales,
+      capital: previewValues.assessmentBasis.capital || fallbackAssessmentBasis.capital,
+    })
+    previewValues.fees = enforceBusinessTaxByApplicationType(record.applicationType, previewValues.fees)
+    previewValues.cedula = selectedRowValues.cedula
+    previewValues.officialReceipt = selectedRowValues.officialReceipt
+    previewValues.assessmentStatus = selectedRowValues.assessmentStatus
     setSelectedClient(record)
-    setEditorValues(cloneAssessmentInputs(existing))
+    setEditorValues(previewValues)
+    setDialogInitialValues(cloneAssessmentInputs(previewValues))
     setIsDialogEditing(!hasAnyAssessmentValue(existing))
     setDialogFeedback(null)
   }
 
+  useEffect(() => {
+    if (!previewApplicationUid || clientsLoading) return
+    if (autoPreviewHandledRef.current === previewApplicationUid) return
+
+    const target = clients.find((client) => getApplicationUid(client) === previewApplicationUid)
+    if (!target) return
+    if (!getAssessmentForClient(target, feesByClient)) return
+
+    autoPreviewHandledRef.current = previewApplicationUid
+    void openClientPreview(target)
+  }, [previewApplicationUid, clientsLoading, clients, feesByClient])
+
+  const persistAssessmentStatus = async (
+    record: BusinessApplicationRecord,
+    assessmentStatus: TreasuryAssessmentStatus
+  ) => {
+    const applicationUid = getApplicationUid(record)
+    const selectedGroup = applicantGroupsByApplication[applicationUid]
+    const primaryApplicationUid = selectedGroup?.primaryApplicationUid ?? applicationUid
+    const groupedApplicationUids = Array.from(new Set(selectedGroup?.applicationUids ?? [applicationUid]))
+
+    try {
+      if (!authUser) throw new Error("Treasury session expired. Please sign in again.")
+      const liveUser = auth.currentUser
+      if (!liveUser) throw new Error("Treasury session expired. Please sign in again.")
+      if (liveUser.uid !== authUser.uid) {
+        throw new Error("Treasury session changed. Please sign in again.")
+      }
+
+      const primaryInputs = displayInputsByApplication[primaryApplicationUid] ?? EMPTY_ASSESSMENT_INPUTS
+      const normalizedPrimary = normalizeAssessmentInputs(primaryInputs)
+      const primaryClient = clientByApplicationUid[primaryApplicationUid]
+      const normalizedPrimaryForSave: ClientAssessmentInputs = {
+        ...normalizedPrimary,
+        fees: enforceBusinessTaxByApplicationType(primaryClient?.applicationType, normalizedPrimary.fees),
+      }
+      const totals = computeAssessmentTotals(
+        normalizedPrimaryForSave.fees,
+        normalizedPrimaryForSave.additionalFees
+      )
+      const feesPayload = FEE_DEFINITIONS.reduce((accumulator, item) => {
+        const row = normalizedPrimaryForSave.fees[item.key]
+        const amount = parseOptionalNumber(row.amount)
+        const penalty = parseOptionalNumber(row.penalty)
+        accumulator[item.key] = {
+          amount,
+          penalty,
+          total: (amount ?? 0) + (penalty ?? 0),
+        } satisfies TreasuryFeeLine
+        return accumulator
+      }, {} as Record<string, TreasuryFeeLine>)
+      const additionalFeesPayload: TreasuryAdditionalFeeLine[] = normalizedPrimaryForSave.additionalFees.map((row) => {
+        const amount = parseOptionalNumber(row.amount)
+        const penalty = parseOptionalNumber(row.penalty)
+
+        return {
+          name: row.name.trim() || "Additional Fee",
+          amount,
+          penalty,
+          total: (amount ?? 0) + (penalty ?? 0),
+        }
+      })
+
+      setSavingClientUid(applicationUid)
+      await Promise.all(
+        groupedApplicationUids.map((groupApplicationUid) => {
+          const isPrimary = groupApplicationUid === primaryApplicationUid
+          const currentInputs = displayInputsByApplication[groupApplicationUid] ?? EMPTY_ASSESSMENT_INPUTS
+          const targetClient = clientByApplicationUid[groupApplicationUid]
+          const targetAssessmentBasis = enforceBusinessBasisByApplicationType(
+            targetClient?.applicationType,
+            normalizedPrimaryForSave.assessmentBasis
+          )
+
+          return saveTreasuryFeeAssessment({
+            applicationUid: groupApplicationUid,
+            cedulaNumber: currentInputs.cedula,
+            officialReceiptNumber: currentInputs.officialReceipt,
+            salaryAmount: "",
+            grossSalesAmount: targetAssessmentBasis.grossSales,
+            capitalAmount: targetAssessmentBasis.capital,
+            fees: isPrimary ? feesPayload : {},
+            additionalFees: isPrimary ? additionalFeesPayload : [],
+            lguTotal: isPrimary ? totals.lguTotal : 0,
+            grandTotal: isPrimary ? totals.grandTotal : 0,
+            assessmentStatus,
+            allowMissingDocumentReferences: true,
+            staffUid: authUser.uid,
+            staffEmail: authUser.email ?? null,
+          })
+        })
+      )
+
+      setInputsByClient((previous) => {
+        const next = { ...previous }
+        groupedApplicationUids.forEach((groupApplicationUid) => {
+          const existing = next[groupApplicationUid] ?? createEmptyAssessmentInputs()
+          next[groupApplicationUid] = {
+            ...cloneAssessmentInputs(existing),
+            assessmentStatus,
+          }
+        })
+        return next
+      })
+    } catch (error) {
+      console.error("Failed to persist treasury assessment status", error)
+      const message = error instanceof Error ? error.message : "Unable to update status right now."
+      toast.error(message)
+    } finally {
+      setSavingClientUid(null)
+    }
+  }
+
   const handleDialogOpenChange = (open: boolean) => {
     if (open) return
+    if (selectedClient) {
+      const currentStatus = normalizeTreasuryAssessmentStatus(editorValues.assessmentStatus)
+      void persistAssessmentStatus(selectedClient, currentStatus)
+    }
     setSelectedClient(null)
     setEditorValues(createEmptyAssessmentInputs())
+    setDialogInitialValues(createEmptyAssessmentInputs())
     setIsDialogEditing(false)
     setDialogFeedback(null)
   }
 
+  const handleAssessmentStatusChange = (nextStatus: TreasuryAssessmentStatus) => {
+    setEditorValues((previous) => ({ ...previous, assessmentStatus: nextStatus }))
+  }
+
   const handleDocumentValueChange = (field: "cedula" | "officialReceipt", value: string) => {
     setEditorValues((previous) => ({ ...previous, [field]: value }))
+  }
+
+  const handleAssessmentBasisValueChange = (
+    field: keyof AssessmentBasisInput,
+    value: string
+  ) => {
+    setEditorValues((previous) => ({
+      ...previous,
+      assessmentBasis: {
+        ...previous.assessmentBasis,
+        [field]: value,
+      },
+    }))
   }
 
   const handleFeeValueChange = (feeKey: FeeKey, field: keyof FeeLineInput, value: string) => {
@@ -1210,14 +1578,33 @@ export default function TreasuryClientsPage() {
       if (!authUser) throw new Error("Treasury session expired. Please sign in again.")
       const liveUser = auth.currentUser
       if (!liveUser) throw new Error("Treasury session expired. Please sign in again.")
-      const authIdToken = await liveUser.getIdToken(true)
       if (liveUser.uid !== authUser.uid) {
         throw new Error("Treasury session changed. Please sign in again.")
       }
 
-      const totals = computeAssessmentTotals(normalized.fees, normalized.additionalFees)
+      const resolvedAssessmentStatus: TreasuryAssessmentStatus = normalizeTreasuryAssessmentStatus(
+        normalized.assessmentStatus
+      )
+      const normalizedForSave: ClientAssessmentInputs = {
+        ...normalized,
+        assessmentStatus: resolvedAssessmentStatus,
+        assessmentBasis: enforceBusinessBasisByApplicationType(
+          selectedClient.applicationType,
+          normalized.assessmentBasis
+        ),
+      }
+      const primaryClient = clientByApplicationUid[primaryApplicationUid]
+      const normalizedForSaveWithTaxRule: ClientAssessmentInputs = {
+        ...normalizedForSave,
+        fees: enforceBusinessTaxByApplicationType(primaryClient?.applicationType, normalizedForSave.fees),
+      }
+
+      const totals = computeAssessmentTotals(
+        normalizedForSaveWithTaxRule.fees,
+        normalizedForSaveWithTaxRule.additionalFees
+      )
       const feesPayload = FEE_DEFINITIONS.reduce((accumulator, item) => {
-        const row = normalized.fees[item.key]
+        const row = normalizedForSaveWithTaxRule.fees[item.key]
         const amount = parseOptionalNumber(row.amount)
         const penalty = parseOptionalNumber(row.penalty)
         accumulator[item.key] = {
@@ -1227,7 +1614,7 @@ export default function TreasuryClientsPage() {
         } satisfies TreasuryFeeLine
         return accumulator
       }, {} as Record<string, TreasuryFeeLine>)
-      const additionalFeesPayload: TreasuryAdditionalFeeLine[] = normalized.additionalFees.map((row) => {
+      const additionalFeesPayload: TreasuryAdditionalFeeLine[] = normalizedForSaveWithTaxRule.additionalFees.map((row) => {
         const amount = parseOptionalNumber(row.amount)
         const penalty = parseOptionalNumber(row.penalty)
 
@@ -1242,38 +1629,74 @@ export default function TreasuryClientsPage() {
       await Promise.all(
         groupedApplicationUids.map((groupApplicationUid) => {
           const isPrimary = groupApplicationUid === primaryApplicationUid
+          const currentInputs = displayInputsByApplication[groupApplicationUid] ?? EMPTY_ASSESSMENT_INPUTS
+          const officialReceiptNumber =
+            groupApplicationUid === applicationUid
+              ? normalized.officialReceipt
+              : currentInputs.officialReceipt.trim()
+          const targetClient = clientByApplicationUid[groupApplicationUid]
+          const targetAssessmentBasis = enforceBusinessBasisByApplicationType(
+            targetClient?.applicationType,
+            normalizedForSaveWithTaxRule.assessmentBasis
+          )
           return saveTreasuryFeeAssessment({
             applicationUid: groupApplicationUid,
             cedulaNumber: normalized.cedula,
-            officialReceiptNumber: normalized.officialReceipt,
+            officialReceiptNumber,
+            salaryAmount: "",
+            grossSalesAmount: targetAssessmentBasis.grossSales,
+            capitalAmount: targetAssessmentBasis.capital,
             fees: isPrimary ? feesPayload : {},
             additionalFees: isPrimary ? additionalFeesPayload : [],
             lguTotal: isPrimary ? totals.lguTotal : 0,
             grandTotal: isPrimary ? totals.grandTotal : 0,
+            assessmentStatus: resolvedAssessmentStatus,
             staffUid: authUser.uid,
             staffEmail: authUser.email ?? null,
-            authIdToken,
           })
         })
       )
 
       setInputsByClient((previous) => {
         const next = { ...previous }
-        const nonPrimaryInputs = createEmptyAssessmentInputs()
-        nonPrimaryInputs.cedula = normalized.cedula
-        nonPrimaryInputs.officialReceipt = normalized.officialReceipt
 
         groupedApplicationUids.forEach((groupApplicationUid) => {
+          const existing = previous[groupApplicationUid] ?? EMPTY_ASSESSMENT_INPUTS
+          const nextOfficialReceipt =
+            groupApplicationUid === applicationUid
+              ? normalizedForSave.officialReceipt
+              : existing.officialReceipt.trim()
+          const targetClient = clientByApplicationUid[groupApplicationUid]
+          const targetAssessmentBasis = enforceBusinessBasisByApplicationType(
+            targetClient?.applicationType,
+            normalizedForSaveWithTaxRule.assessmentBasis
+          )
+          const primarySnapshot = cloneAssessmentInputs({
+            ...normalizedForSaveWithTaxRule,
+            assessmentBasis: targetAssessmentBasis,
+          })
+          const nonPrimarySnapshot = cloneAssessmentInputs({
+            ...createEmptyAssessmentInputs(),
+            cedula: normalizedForSave.cedula,
+            officialReceipt: nextOfficialReceipt,
+            assessmentStatus: resolvedAssessmentStatus,
+            assessmentBasis: targetAssessmentBasis,
+          })
           next[groupApplicationUid] =
             groupApplicationUid === primaryApplicationUid
-              ? cloneAssessmentInputs(normalized)
-              : cloneAssessmentInputs(nonPrimaryInputs)
+              ? {
+                  ...primarySnapshot,
+                  cedula: normalizedForSave.cedula,
+                  officialReceipt: nextOfficialReceipt,
+                }
+              : nonPrimarySnapshot
         })
 
         return next
       })
       setSelectedClient(null)
       setEditorValues(createEmptyAssessmentInputs())
+      setDialogInitialValues(createEmptyAssessmentInputs())
       setDialogFeedback(null)
       toast.success("Saved")
       setIsDialogEditing(false)
@@ -1326,41 +1749,50 @@ export default function TreasuryClientsPage() {
           <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{clientsError}</div>
         ) : null}
 
-        <div className="overflow-x-auto">
-          <table className="min-w-[1080px] table-auto border-collapse">
+        <div className="overflow-x-hidden">
+          <table className="w-full table-fixed border-collapse">
             <thead>
               <tr className="bg-emerald-700 text-left text-sm text-white">
                 <th className="px-3 py-3 font-medium">No.</th>
                 <th className="px-3 py-3 font-medium">Client</th>
-                <th className="px-3 py-3 font-medium">Application UID</th>
                 <th className="px-3 py-3 font-medium">Application Date</th>
-                <th className="px-3 py-3 font-medium">Grand Total</th>
+                <th className="px-3 py-3 font-medium">Type</th>
+                <th className="px-3 py-3 font-medium">Status</th>
                 <th className="px-3 py-3 font-medium">Cedula No.</th>
                 <th className="px-3 py-3 font-medium">OR No.</th>
+                <th className="px-3 py-3 font-medium text-right">Total Paid</th>
               </tr>
             </thead>
             <tbody>
               {clientsLoading ? (
                 <tr>
-                  <td colSpan={7} className="border-b border-slate-200 px-3 py-6 text-center text-sm text-slate-500">Loading clients...</td>
+                  <td colSpan={8} className="border-b border-slate-200 px-3 py-6 text-center text-sm text-slate-500">Loading clients...</td>
                 </tr>
               ) : filteredClients.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="border-b border-slate-200 px-3 py-6 text-center text-sm text-slate-500">No matching clients found.</td>
+                  <td colSpan={8} className="border-b border-slate-200 px-3 py-6 text-center text-sm text-slate-500">No matching clients found.</td>
                 </tr>
               ) : (
                 filteredClients.map((client, index) => {
                   const applicationUid = getApplicationUid(client)
                   const row = displayInputsByApplication[applicationUid] ?? EMPTY_ASSESSMENT_INPUTS
-                  const rowTotals = computeAssessmentTotals(row.fees, row.additionalFees)
-                  const group = applicantGroupsByApplication[applicationUid]
-                  const isPrimaryInGroup = !group || group.primaryApplicationUid === applicationUid
-                  const shouldShowGrandTotal = isPrimaryInGroup && hasAnyFeeValue(row)
+                  const status = normalizeTreasuryAssessmentStatus(row.assessmentStatus)
+                  const groupedClient = applicantGroupsByApplication[applicationUid]
+                  const primaryClient = groupedClient
+                    ? clientByApplicationUid[groupedClient.primaryApplicationUid]
+                    : client
+                  const paidAssessment =
+                    (primaryClient ? getAssessmentForClient(primaryClient, feesByClient) : undefined) ??
+                    getAssessmentForClient(client, feesByClient)
+                  const paidTotal =
+                    typeof paidAssessment?.grand_total === "number" &&
+                    Number.isFinite(paidAssessment.grand_total)
+                      ? paidAssessment.grand_total
+                      : 0
                   const formattedDate = (() => {
-                    if (!client.applicationDate) return "-"
-                    const date = new Date(client.applicationDate)
-                    if (Number.isNaN(date.getTime())) return "-"
-                    return date.toLocaleDateString()
+                    const timestamp = getApplicationDateTimestamp(client)
+                    if (timestamp === null) return "-"
+                    return new Date(timestamp).toLocaleDateString()
                   })()
 
                   return (
@@ -1378,15 +1810,40 @@ export default function TreasuryClientsPage() {
                       className="cursor-pointer border-b border-slate-200 text-sm text-slate-700 transition-colors hover:bg-slate-50 focus-within:bg-slate-50"
                     >
                       <td className="px-3 py-3">{index + 1}</td>
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-3 break-words">
                         <p className="font-medium text-slate-900">{client.applicantName}</p>
                         {client.businessName ? <p className="text-xs text-slate-500">{client.businessName}</p> : null}
                       </td>
-                      <td className="px-3 py-3 font-mono text-xs">{applicationUid}</td>
                       <td className="px-3 py-3">{formattedDate}</td>
-                      <td className="px-3 py-3"><span className={shouldShowGrandTotal ? "font-medium text-slate-800" : "text-slate-400"}>{shouldShowGrandTotal ? formatCurrency(rowTotals.grandTotal) : "-"}</span></td>
+                      <td className="px-3 py-3">
+                        <span
+                          className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${getApplicationTypeBadgeClassName(
+                            client.applicationType
+                          )}`}
+                        >
+                          {client.applicationType}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3">
+                        <span
+                          className={
+                            status === "paid"
+                              ? "font-medium text-emerald-700"
+                              : status === "unpaid"
+                                ? "font-medium text-rose-700"
+                                : "font-medium text-amber-700"
+                          }
+                        >
+                          {getTreasuryAssessmentStatusLabel(status)}
+                        </span>
+                      </td>
                       <td className="px-3 py-3"><span className={row.cedula.trim() ? "font-medium text-slate-800" : "text-slate-400"}>{row.cedula.trim() || "-"}</span></td>
                       <td className="px-3 py-3"><span className={row.officialReceipt.trim() ? "font-medium text-slate-800" : "text-slate-400"}>{row.officialReceipt.trim() || "-"}</span></td>
+                      <td className="px-3 py-3 text-right tabular-nums">
+                        <span className={status === "paid" ? "font-medium text-slate-900" : "text-slate-400"}>
+                          {status === "paid" ? formatCurrency(paidTotal) : "-"}
+                        </span>
+                      </td>
                     </tr>
                   )
                 })
@@ -1398,18 +1855,29 @@ export default function TreasuryClientsPage() {
 
       <Dialog open={Boolean(selectedClient)} onOpenChange={handleDialogOpenChange}>
         <DialogContent className="h-[calc(100vh-0.75rem)] w-[90vw] max-w-[86rem] sm:max-w-[86rem] gap-0 overflow-hidden p-0">
-          <DialogHeader className="border-b border-slate-200 bg-white px-6 py-4">
-            <DialogTitle className="text-xl text-slate-900">Assessment Preview</DialogTitle>
-            <DialogDescription className="text-slate-600">
+          <DialogHeader className="border-b border-slate-400 bg-slate-100 px-6 py-4">
+            <DialogTitle className="flex flex-wrap items-center gap-2 text-xl text-slate-950">
+              <span>Assessment Preview</span>
+              {selectedClient ? (
+                <span
+                  className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${getApplicationTypeBadgeClassName(
+                    selectedClient.applicationType
+                  )}`}
+                >
+                  {selectedClient.applicationType}
+                </span>
+              ) : null}
+            </DialogTitle>
+            <DialogDescription className="text-slate-700">
               {selectedClient
                 ? `${selectedClient.applicantName || "Client"}${selectedClient.businessName ? ` • ${selectedClient.businessName}` : ""}`
                 : "Preview and update fee assessment details."}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="max-h-[70vh] overflow-y-auto bg-slate-50 p-6" data-nav-scope="treasury-assessment">
+          <div className="max-h-[70vh] overflow-y-auto bg-slate-200 p-6" data-nav-scope="treasury-assessment">
             <div className="space-y-5">
-              <div className="rounded-lg border border-slate-200 bg-white p-4">
+              <div className="rounded-lg border border-slate-400 bg-slate-50 p-4">
                 <p className="text-sm font-semibold text-slate-900">What This Form Is For</p>
                 <p className="mt-2 text-sm text-slate-600">This form is used to assess local taxes, compute regulatory fees, add inspection charges, and calculate the Grand Total for business permit approval.</p>
                 <p className="mt-2 text-xs text-slate-500">Typical use: Mayor's Permit application, business renewal, and new business registration.</p>
@@ -1423,37 +1891,6 @@ export default function TreasuryClientsPage() {
 
                 {selectedMobileFeeReference ? (
                   <div className="mt-3 space-y-3">
-                    <div className="grid gap-2 text-xs text-amber-900 md:grid-cols-2">
-                      <p>
-                        <span className="font-semibold">Basis Type:</span>{" "}
-                        {selectedMobileFeeReference.basisType || "-"}
-                      </p>
-                      <p>
-                        <span className="font-semibold">Basis Total:</span>{" "}
-                        {selectedMobileFeeReference.basisTotal !== null
-                          ? formatCurrency(selectedMobileFeeReference.basisTotal)
-                          : "-"}
-                      </p>
-                      <p>
-                        <span className="font-semibold">Estimated Total:</span>{" "}
-                        {selectedMobileFeeReference.estimatedTotal !== null
-                          ? formatCurrency(selectedMobileFeeReference.estimatedTotal)
-                          : "-"}
-                      </p>
-                      <p>
-                        <span className="font-semibold">Status:</span>{" "}
-                        {selectedMobileFeeReference.status || "-"}
-                      </p>
-                      <p>
-                        <span className="font-semibold">Computed:</span>{" "}
-                        {formatDateTimeCell(selectedMobileFeeReference.computedAt)}
-                      </p>
-                      <p className="md:col-span-2">
-                        <span className="font-semibold">Source:</span>{" "}
-                        {selectedMobileFeeReference.sourceLabel || selectedMobileFeeReference.sourcePath}
-                      </p>
-                    </div>
-
                     <div className="overflow-x-auto rounded-md border border-amber-200 bg-white">
                       <table className="w-full min-w-[420px] border-collapse text-sm">
                         <thead>
@@ -1482,6 +1919,13 @@ export default function TreasuryClientsPage() {
                         </tbody>
                       </table>
                     </div>
+
+                    <p className="text-xs font-semibold text-amber-900 md:text-right">
+                      <span>Estimated Total:</span>{" "}
+                      {selectedMobileFeeReference.estimatedTotal !== null
+                        ? formatCurrency(selectedMobileFeeReference.estimatedTotal)
+                        : "-"}
+                    </p>
                   </div>
                 ) : (
                   <p className="mt-3 text-sm text-amber-800">
@@ -1490,8 +1934,45 @@ export default function TreasuryClientsPage() {
                 )}
               </div>
 
-              <div className="overflow-x-auto rounded-lg border-2 border-slate-300 bg-white">
-                <div className="border-b border-slate-300 px-4 py-3"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Assessment of Applicable Fees</p></div>
+              <div className="overflow-hidden rounded-lg border-2 border-slate-500 bg-white">
+                <div className="border-b border-slate-500 bg-slate-300 px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-800">Assessment Basis (Editable)</p>
+                </div>
+                <div className="grid grid-cols-12 border-b border-slate-500 bg-slate-200 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+                  <div className="col-span-4 border-r border-slate-500 px-3 py-2">Field</div>
+                  <div className="col-span-4 border-r border-slate-500 px-3 py-2">Amount</div>
+                  <div className="col-span-4 px-3 py-2">Notes</div>
+                </div>
+
+                <div className="grid grid-cols-12 bg-white">
+                  <div className="col-span-4 border-r border-slate-500 px-3 py-3 text-sm font-medium text-slate-900">{selectedBusinessBasisLabel}</div>
+                  <div className="col-span-4 border-r border-slate-500 px-3 py-2">
+                    {isDialogEditing ? (
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={editorValues.assessmentBasis[selectedBusinessBasisField]}
+                        onChange={(event) =>
+                          handleAssessmentBasisValueChange(selectedBusinessBasisField, event.target.value)
+                        }
+                        onKeyDown={handleAssessmentInputArrowNavigation}
+                        data-nav-row={assessmentBasisBaseNavRow}
+                        data-nav-col={0}
+                        className="h-9 w-full rounded-md border border-slate-400 px-2 text-right text-sm outline-none ring-emerald-300 focus:ring"
+                      />
+                    ) : (
+                      <p className="pt-2 text-right text-sm text-slate-800">
+                        {formatBasisCell(editorValues.assessmentBasis[selectedBusinessBasisField])}
+                      </p>
+                    )}
+                  </div>
+                  <div className="col-span-4 px-3 py-3 text-xs text-slate-600">{selectedBusinessBasisNote}</div>
+                </div>
+
+              </div>
+
+              <div className="overflow-x-auto rounded-lg border-2 border-slate-500 bg-white">
+                <div className="border-b border-slate-500 bg-slate-300 px-4 py-3"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-800">Assessment of Applicable Fees</p></div>
 
                 <table className="w-full min-w-[1200px] border-collapse text-sm">
                   <colgroup>
@@ -1501,15 +1982,15 @@ export default function TreasuryClientsPage() {
                     <col className="w-[16%]" />
                   </colgroup>
                   <thead>
-                    <tr className="bg-slate-100 text-slate-700">
-                      <th className="border-b border-r border-slate-300 px-3 py-2 text-left font-semibold">Particulars</th>
-                      <th className="border-b border-r border-slate-300 px-3 py-2 text-right font-semibold whitespace-nowrap">Amount</th>
-                      <th className="border-b border-r border-slate-300 px-3 py-2 text-right font-semibold whitespace-nowrap">Penalty/Surcharge</th>
-                      <th className="border-b border-slate-300 px-3 py-2 text-right font-semibold whitespace-nowrap">Total</th>
+                    <tr className="bg-slate-300 text-slate-900">
+                      <th className="border-b border-r border-slate-500 px-3 py-2 text-left font-semibold">Particulars</th>
+                      <th className="border-b border-r border-slate-500 px-3 py-2 text-right font-semibold whitespace-nowrap">Amount</th>
+                      <th className="border-b border-r border-slate-500 px-3 py-2 text-right font-semibold whitespace-nowrap">Penalty/Surcharge</th>
+                      <th className="border-b border-slate-500 px-3 py-2 text-right font-semibold whitespace-nowrap">Total</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr className="bg-slate-50"><td colSpan={4} className="border-b border-slate-300 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">1. Local Taxes</td></tr>
+                    <tr className="bg-slate-200"><td colSpan={4} className="border-b border-slate-500 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-800">1. Local Taxes</td></tr>
                     {renderFeeSectionRows(
                       LOCAL_TAX_ITEMS,
                       editorValues,
@@ -1518,7 +1999,7 @@ export default function TreasuryClientsPage() {
                       handleFeeValueChange,
                       handleAssessmentInputArrowNavigation
                     )}
-                    <tr className="bg-slate-50"><td colSpan={4} className="border-b border-slate-300 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">2. Regulatory Fees and Charges</td></tr>
+                    <tr className="bg-slate-200"><td colSpan={4} className="border-b border-slate-500 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-800">2. Regulatory Fees and Charges</td></tr>
                     {renderFeeSectionRows(
                       REGULATORY_FEE_ITEMS,
                       editorValues,
@@ -1527,7 +2008,7 @@ export default function TreasuryClientsPage() {
                       handleFeeValueChange,
                       handleAssessmentInputArrowNavigation
                     )}
-                    <tr className="bg-slate-50"><td colSpan={4} className="border-b border-slate-300 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">3. Additional Fees (Optional)</td></tr>
+                    <tr className="bg-slate-200"><td colSpan={4} className="border-b border-slate-500 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-800">3. Additional Fees (Optional)</td></tr>
                     {renderAdditionalFeeRows(
                       editorValues,
                       isDialogEditing,
@@ -1539,18 +2020,18 @@ export default function TreasuryClientsPage() {
                     )}
                     {isDialogEditing ? (
                       <tr>
-                        <td colSpan={4} className="border-b border-slate-300 px-3 py-3">
+                        <td colSpan={4} className="border-b border-slate-500 px-3 py-3">
                           <button
                             type="button"
                             onClick={handleAddAdditionalFee}
-                            className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 px-3 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                            className="inline-flex h-9 items-center justify-center rounded-md border border-slate-400 px-3 text-xs font-medium text-slate-700 hover:bg-slate-200"
                           >
                             + Add Fee
                           </button>
                         </td>
                       </tr>
                     ) : null}
-                    <tr className="bg-slate-50"><td colSpan={4} className="border-b border-slate-300 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">4. Fire Safety Fees</td></tr>
+                    <tr className="bg-slate-200"><td colSpan={4} className="border-b border-slate-500 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-800">4. Fire Safety Fees</td></tr>
                     {renderFeeSectionRows(
                       FIRE_FEE_ITEMS,
                       editorValues,
@@ -1559,43 +2040,72 @@ export default function TreasuryClientsPage() {
                       handleFeeValueChange,
                       handleAssessmentInputArrowNavigation
                     )}
-                    <tr className="bg-slate-50">
-                      <td className="border-b border-r border-slate-300 px-3 py-2 font-semibold text-slate-900">TOTAL FEES for LGU</td>
-                      <td className="border-b border-r border-slate-300 px-3 py-2 text-right text-slate-500">-</td>
-                      <td className="border-b border-r border-slate-300 px-3 py-2 text-right text-slate-500">-</td>
-                      <td className="border-b border-slate-300 px-3 py-2 text-right font-semibold tabular-nums text-slate-900 whitespace-nowrap">{dialogHasFeeValues ? formatCurrency(dialogTotals.lguTotal) : "-"}</td>
+                    <tr className="bg-slate-200">
+                      <td className="border-b border-r border-slate-500 px-3 py-2 font-semibold text-slate-900">TOTAL FEES for LGU</td>
+                      <td className="border-b border-r border-slate-500 px-3 py-2 text-right text-slate-700">-</td>
+                      <td className="border-b border-r border-slate-500 px-3 py-2 text-right text-slate-700">-</td>
+                      <td className="border-b border-slate-500 px-3 py-2 text-right font-semibold tabular-nums text-slate-900 whitespace-nowrap">{dialogHasFeeValues ? formatCurrency(dialogTotals.lguTotal) : "-"}</td>
                     </tr>
-                    <tr className="bg-slate-100">
-                      <td className="border-r border-slate-300 px-3 py-2 font-semibold text-slate-900">GRAND TOTAL</td>
-                      <td className="border-r border-slate-300 px-3 py-2 text-right text-slate-500">-</td>
-                      <td className="border-r border-slate-300 px-3 py-2 text-right text-slate-500">-</td>
+                    <tr className="bg-slate-300">
+                      <td className="border-r border-slate-500 px-3 py-2 font-semibold text-slate-900">GRAND TOTAL</td>
+                      <td className="border-r border-slate-500 px-3 py-2 text-right text-slate-700">-</td>
+                      <td className="border-r border-slate-500 px-3 py-2 text-right text-slate-700">-</td>
                       <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900 whitespace-nowrap">{dialogHasFeeValues ? formatCurrency(dialogTotals.grandTotal) : "-"}</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
 
-              <div className="overflow-hidden rounded-lg border-2 border-slate-300 bg-white">
-                <div className="grid grid-cols-12 border-b border-slate-300 bg-slate-100 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                  <div className="col-span-6 border-r border-slate-300 px-3 py-2">Field</div>
-                  <div className="col-span-3 border-r border-slate-300 px-3 py-2">Reference No.</div>
+              <div className="overflow-hidden rounded-lg border-2 border-slate-500 bg-white">
+                <div className="grid grid-cols-12 border-b border-slate-500 bg-slate-300 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+                  <div className="col-span-6 border-r border-slate-500 px-3 py-2">Field</div>
+                  <div className="col-span-3 border-r border-slate-500 px-3 py-2">Reference No.</div>
                   <div className="col-span-3 px-3 py-2">Notes</div>
                 </div>
 
-                <div className="grid grid-cols-12 border-b border-slate-300">
-                  <div className="col-span-6 border-r border-slate-300 px-3 py-3 text-sm font-medium text-slate-800">Cedula Number</div>
-                  <div className="col-span-3 border-r border-slate-300 px-3 py-2">
-                    {isDialogEditing ? <input type="text" value={editorValues.cedula} onChange={(event) => handleDocumentValueChange("cedula", event.target.value)} onKeyDown={handleAssessmentInputArrowNavigation} data-nav-row={FEE_DEFINITIONS.length + editorValues.additionalFees.length} data-nav-col={0} className="h-9 w-full rounded-md border border-slate-300 px-2 text-sm outline-none ring-emerald-200 focus:ring" /> : <p className="pt-2 text-sm text-slate-700">{editorValues.cedula.trim() || "-"}</p>}
+                <div className="grid grid-cols-12 border-b border-slate-500 bg-white">
+                  <div className="col-span-6 border-r border-slate-500 px-3 py-3 text-sm font-medium text-slate-900">Cedula Number</div>
+                  <div className="col-span-3 border-r border-slate-500 px-3 py-2">
+                    {isDialogEditing ? <input type="text" value={editorValues.cedula} onChange={(event) => handleDocumentValueChange("cedula", event.target.value)} onKeyDown={handleAssessmentInputArrowNavigation} data-nav-row={cedulaNavRow} data-nav-col={0} className="h-9 w-full rounded-md border border-slate-400 px-2 text-sm outline-none ring-emerald-300 focus:ring" /> : <p className="pt-2 text-sm text-slate-800">{editorValues.cedula.trim() || "-"}</p>}
                   </div>
-                  <div className="col-span-3 px-3 py-3 text-xs text-slate-500">Community Tax Certificate reference.</div>
+                  <div className="col-span-3 px-3 py-3 text-xs text-slate-600">Community Tax Certificate reference.</div>
                 </div>
 
-                <div className="grid grid-cols-12">
-                  <div className="col-span-6 border-r border-slate-300 px-3 py-3 text-sm font-medium text-slate-800">Official Receipt Number</div>
-                  <div className="col-span-3 border-r border-slate-300 px-3 py-2">
-                    {isDialogEditing ? <input type="text" value={editorValues.officialReceipt} onChange={(event) => handleDocumentValueChange("officialReceipt", event.target.value)} onKeyDown={handleAssessmentInputArrowNavigation} data-nav-row={FEE_DEFINITIONS.length + editorValues.additionalFees.length + 1} data-nav-col={0} className="h-9 w-full rounded-md border border-slate-300 px-2 text-sm outline-none ring-emerald-200 focus:ring" /> : <p className="pt-2 text-sm text-slate-700">{editorValues.officialReceipt.trim() || "-"}</p>}
+                <div className="grid grid-cols-12 bg-white">
+                  <div className="col-span-6 border-r border-slate-500 px-3 py-3 text-sm font-medium text-slate-900">Official Receipt Number</div>
+                  <div className="col-span-3 border-r border-slate-500 px-3 py-2">
+                    {isDialogEditing ? <input type="text" value={editorValues.officialReceipt} onChange={(event) => handleDocumentValueChange("officialReceipt", event.target.value)} onKeyDown={handleAssessmentInputArrowNavigation} data-nav-row={officialReceiptNavRow} data-nav-col={0} className="h-9 w-full rounded-md border border-slate-400 px-2 text-sm outline-none ring-emerald-300 focus:ring" /> : <p className="pt-2 text-sm text-slate-800">{editorValues.officialReceipt.trim() || "-"}</p>}
                   </div>
-                  <div className="col-span-3 px-3 py-3 text-xs text-slate-500">Official receipt reference for payment.</div>
+                  <div className="col-span-3 px-3 py-3 text-xs text-slate-600">Official receipt reference for payment.</div>
+                </div>
+
+                <div className="grid grid-cols-12 border-t border-slate-500 bg-slate-200">
+                  <div className="col-span-6 border-r border-slate-500 px-3 py-3 text-sm font-medium text-slate-900">Assessment Status</div>
+                  <div className="col-span-3 border-r border-slate-500 px-3 py-2">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleAssessmentStatusChange("paid")}
+                        className={`inline-flex h-8 items-center justify-center rounded-md border px-3 text-xs font-medium ${editorValues.assessmentStatus === "paid" ? "border-emerald-700 bg-emerald-700 text-white" : "border-slate-400 bg-white text-slate-800 hover:bg-slate-200"}`}
+                      >
+                        Paid
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAssessmentStatusChange("unpaid")}
+                        className={`inline-flex h-8 items-center justify-center rounded-md border px-3 text-xs font-medium ${editorValues.assessmentStatus === "unpaid" ? "border-rose-700 bg-rose-700 text-white" : "border-slate-400 bg-white text-slate-800 hover:bg-slate-200"}`}
+                      >
+                        Unpaid
+                      </button>
+                    </div>
+                  </div>
+                  <div className="col-span-3 px-3 py-3 text-xs text-slate-600">
+                    Current:{" "}
+                    <span className="font-semibold text-slate-800">
+                      {getTreasuryAssessmentStatusLabel(editorValues.assessmentStatus)}
+                    </span>
+                    . Status is kept unless you change it.
+                  </div>
                 </div>
               </div>
 
@@ -1607,7 +2117,7 @@ export default function TreasuryClientsPage() {
             {dialogFeedback ? <p className={`mt-4 text-sm ${dialogFeedback.type === "success" ? "text-emerald-700" : "text-red-600"}`}>{dialogFeedback.message}</p> : null}
           </div>
 
-          <DialogFooter className="border-t border-slate-200 bg-white px-6 py-4">
+          <DialogFooter className="border-t border-slate-400 bg-slate-100 px-6 py-4">
             {!isDialogEditing ? (
               <button type="button" onClick={() => { setDialogFeedback(null); setIsDialogEditing(true) }} className="inline-flex h-10 items-center justify-center rounded-md border border-slate-300 px-4 text-sm font-medium text-slate-700 hover:bg-slate-100">Edit</button>
             ) : null}
@@ -1616,7 +2126,7 @@ export default function TreasuryClientsPage() {
               <button type="button" onClick={() => handleDialogOpenChange(false)} disabled={dialogIsSaving} className="inline-flex h-10 items-center justify-center rounded-md border border-slate-300 px-4 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60">Close</button>
             ) : null}
 
-            {isDialogEditing ? (
+            {dialogHasUnsavedChanges ? (
               <button type="button" onClick={handleSaveFromDialog} disabled={dialogIsSaving || !hasRequiredDocumentReferences(editorValues)} className="inline-flex h-10 items-center justify-center rounded-md bg-emerald-700 px-4 text-sm font-medium text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">{dialogIsSaving ? "Saving..." : "Save"}</button>
             ) : null}
           </DialogFooter>

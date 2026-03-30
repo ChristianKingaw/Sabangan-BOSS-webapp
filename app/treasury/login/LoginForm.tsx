@@ -1,35 +1,76 @@
 "use client"
 
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { FirebaseError } from "firebase/app"
-import { getAuth, signInWithEmailAndPassword } from "firebase/auth"
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth"
 import { app as firebaseApp } from "@/database/firebase"
-import { findTreasuryByEmail } from "@/database/treasury"
 
 const TREASURY_EMAIL_STORAGE_KEY = "bossTreasuryEmail"
 
-async function hashPassword(value: string) {
-  if (typeof window !== "undefined" && window.crypto?.subtle) {
-    const encoder = new TextEncoder()
-    const data = encoder.encode(value)
-    const hashBuffer = await window.crypto.subtle.digest("SHA-256", data)
-    const hashArray = Array.from(new Uint8Array(hashBuffer))
-    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("")
+const parseApiBody = async (response: Response) => {
+  try {
+    return (await response.json()) as Record<string, unknown>
+  } catch {
+    return {} as Record<string, unknown>
   }
-
-  const { createHash } = await import("crypto")
-  return createHash("sha256").update(value).digest("hex")
 }
 
 export default function LoginForm() {
   const router = useRouter()
+  const auth = useMemo(() => getAuth(firebaseApp), [])
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [remember, setRemember] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [checkingAuth, setCheckingAuth] = useState(true)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
+
+  const verifyTreasuryAccess = async (idToken: string) => {
+    const response = await fetch("/api/treasury/auth-profile", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+      },
+      cache: "no-store",
+    })
+    const body = await parseApiBody(response)
+    if (!response.ok) {
+      throw new Error(
+        String(body.error ?? "Authenticated user is not authorized for treasury access.")
+      )
+    }
+  }
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (user) => {
+        if (user) {
+          void (async () => {
+            try {
+              const idToken = await user.getIdToken(true)
+              await verifyTreasuryAccess(idToken)
+              router.replace("/treasury/home")
+            } catch (err) {
+              await signOut(auth)
+              setError(err instanceof Error ? err.message : "Treasury access is not authorized.")
+            } finally {
+              setCheckingAuth(false)
+            }
+          })()
+          return
+        }
+        setCheckingAuth(false)
+      },
+      () => {
+        setError("Unable to verify authentication state. Please sign in.")
+        setCheckingAuth(false)
+      }
+    )
+    return unsubscribe
+  }, [auth, router])
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -51,18 +92,9 @@ export default function LoginForm() {
 
     setLoading(true)
     try {
-      const treasuryRecord = await findTreasuryByEmail(normalizedEmail)
-      if (!treasuryRecord) {
-        throw new Error("Account not found. Please contact an administrator.")
-      }
-
-      const hashedInput = await hashPassword(password)
-      if (treasuryRecord.passwordHash !== hashedInput) {
-        throw new Error("Invalid email or password.")
-      }
-
-      const auth = getAuth(firebaseApp)
-      await signInWithEmailAndPassword(auth, normalizedEmail, password)
+      const credential = await signInWithEmailAndPassword(auth, normalizedEmail, password)
+      const idToken = await credential.user.getIdToken(true)
+      await verifyTreasuryAccess(idToken)
 
       if (typeof window !== "undefined") {
         if (remember) {
@@ -76,6 +108,9 @@ export default function LoginForm() {
       router.replace("/treasury/home")
       setPassword("")
     } catch (err) {
+      if (auth.currentUser) {
+        await signOut(auth)
+      }
       if (err instanceof FirebaseError) {
         if (err.code === "auth/user-not-found") {
           setError("Account not found. Please contact an administrator.")
@@ -90,6 +125,14 @@ export default function LoginForm() {
     } finally {
       setLoading(false)
     }
+  }
+
+  if (checkingAuth) {
+    return (
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-border max-w-sm mx-auto text-center">
+        <p className="text-sm text-muted-foreground">Checking authentication...</p>
+      </div>
+    )
   }
 
   return (
@@ -141,7 +184,9 @@ export default function LoginForm() {
           </button>
         </div>
 
-        <p className="text-xs text-gray-500 mt-3">Credentials are validated from `users/webapp/treasury`.</p>
+        <p className="text-xs text-gray-500 mt-3">
+          Credentials are validated by Firebase Auth and treasury role verification.
+        </p>
       </div>
     </form>
   )

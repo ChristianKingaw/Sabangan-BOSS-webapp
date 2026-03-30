@@ -3,23 +3,17 @@
 import React, { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { FirebaseError } from "firebase/app"
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "firebase/auth"
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth"
 import { app as firebaseApp } from "@/database/firebase"
-import { findMhoByEmail } from "@/database/mho"
 
 const MHO_EMAIL_STORAGE_KEY = "bossMhoEmail"
 
-async function hashPassword(value: string) {
-  if (typeof window !== "undefined" && window.crypto?.subtle) {
-    const encoder = new TextEncoder()
-    const data = encoder.encode(value)
-    const hashBuffer = await window.crypto.subtle.digest("SHA-256", data)
-    const hashArray = Array.from(new Uint8Array(hashBuffer))
-    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("")
+const parseApiBody = async (response: Response) => {
+  try {
+    return (await response.json()) as Record<string, unknown>
+  } catch {
+    return {} as Record<string, unknown>
   }
-
-  const { createHash } = await import("crypto")
-  return createHash("sha256").update(value).digest("hex")
 }
 
 export default function LoginForm() {
@@ -33,12 +27,39 @@ export default function LoginForm() {
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
 
+  const verifyMhoAccess = async (idToken: string) => {
+    const response = await fetch("/api/mho/auth-profile", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+      },
+      cache: "no-store",
+    })
+    const body = await parseApiBody(response)
+    if (!response.ok) {
+      throw new Error(
+        String(body.error ?? "Authenticated user is not authorized for MHO access.")
+      )
+    }
+  }
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(
       auth,
       (user) => {
         if (user) {
-          router.replace("/mho/home")
+          void (async () => {
+            try {
+              const idToken = await user.getIdToken(true)
+              await verifyMhoAccess(idToken)
+              router.replace("/mho/home")
+            } catch (err) {
+              await signOut(auth)
+              setError(err instanceof Error ? err.message : "MHO access is not authorized.")
+            } finally {
+              setCheckingAuth(false)
+            }
+          })()
           return
         }
         setCheckingAuth(false)
@@ -71,17 +92,9 @@ export default function LoginForm() {
 
     setLoading(true)
     try {
-      const mhoRecord = await findMhoByEmail(normalizedEmail)
-      if (!mhoRecord) {
-        throw new Error("Account not found. Please contact an administrator.")
-      }
-
-      const hashedInput = await hashPassword(password)
-      if (mhoRecord.passwordHash !== hashedInput) {
-        throw new Error("Invalid email or password.")
-      }
-
-      await signInWithEmailAndPassword(auth, normalizedEmail, password)
+      const credential = await signInWithEmailAndPassword(auth, normalizedEmail, password)
+      const idToken = await credential.user.getIdToken(true)
+      await verifyMhoAccess(idToken)
 
       if (typeof window !== "undefined") {
         if (remember) {
@@ -95,6 +108,9 @@ export default function LoginForm() {
       router.replace("/mho/home")
       setPassword("")
     } catch (err) {
+      if (auth.currentUser) {
+        await signOut(auth)
+      }
       if (err instanceof FirebaseError) {
         if (err.code === "auth/user-not-found") {
           setError("Account not found. Please contact an administrator.")
@@ -168,7 +184,9 @@ export default function LoginForm() {
           </button>
         </div>
 
-        <p className="text-xs text-gray-500 mt-3">Credentials are validated from `users/webapp/mho`.</p>
+        <p className="text-xs text-gray-500 mt-3">
+          Credentials are validated by Firebase Auth and MHO role verification.
+        </p>
       </div>
     </form>
   )

@@ -7,12 +7,17 @@ const os = require("os");
 const { PDFDocument } = require("pdf-lib");
 
 const app = express();
+const converterRouter = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB limit
 
-// Health check
-app.get("/health", (req, res) => {
+function healthHandler(req, res) {
   res.json({ status: "ok", service: "cloud-run-converter" });
-});
+}
+
+// Legacy health endpoint.
+app.get("/health", healthHandler);
+// Health endpoint compatible with Firebase Hosting rewrite /api/convert/**.
+converterRouter.get("/health", healthHandler);
 
 /**
  * Convert DOCX buffer to PDF using LibreOffice headless
@@ -125,7 +130,7 @@ async function convertImageToPdf(imageBuffer, mimeType) {
  * POST /convert/docx-to-pdf
  * Accepts multipart form with 'file' field containing DOCX
  */
-app.post("/convert/docx-to-pdf", upload.single("file"), async (req, res) => {
+converterRouter.post("/docx-to-pdf", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
@@ -146,7 +151,7 @@ app.post("/convert/docx-to-pdf", upload.single("file"), async (req, res) => {
  * POST /convert/image-to-pdf
  * Accepts multipart form with 'file' field containing PNG/JPEG
  */
-app.post("/convert/image-to-pdf", upload.single("file"), async (req, res) => {
+converterRouter.post("/image-to-pdf", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
@@ -168,7 +173,7 @@ app.post("/convert/image-to-pdf", upload.single("file"), async (req, res) => {
  * Accepts multipart form with multiple 'files' fields containing PNG/JPEG
  * Merges all images into a single PDF
  */
-app.post("/convert/images-to-pdf", upload.array("files", 20), async (req, res) => {
+converterRouter.post("/images-to-pdf", upload.array("files", 20), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ error: "No files uploaded" });
@@ -207,6 +212,13 @@ app.post("/convert/images-to-pdf", upload.array("files", 20), async (req, res) =
 });
 
 const PORT = process.env.PORT || 8080;
+
+// Preserve both route styles:
+// - /convert/* for direct service calls
+// - /api/convert/* for Firebase Hosting rewrite passthrough
+app.use("/convert", converterRouter);
+app.use("/api/convert", converterRouter);
+
 app.listen(PORT, () => {
   console.log(`Converter service listening on port ${PORT}`);
 });

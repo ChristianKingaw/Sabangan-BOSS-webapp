@@ -20,6 +20,7 @@ const TREASURY_COLLECTION = RAW_NAMESPACE.endsWith("/treasury")
   : `${RAW_NAMESPACE}/treasury`
 const TREASURY_BUCKET = "Treasury"
 const TREASURY_FEES_PATH = `${TREASURY_BUCKET}/fees`
+const TREASURY_REASSESSMENT_PATH = `${TREASURY_BUCKET}/reassessment`
 
 export type TreasuryRecord = {
   id: string
@@ -51,6 +52,12 @@ export type TreasuryFeeAssessmentRecord = {
   uid: string
   application_uid: string
   client_uid?: string
+  assessment_status?: string
+  reassessment_status?: string
+  reassessed_at?: number | null
+  salary_amount?: string
+  gross_sales_amount?: string
+  capital_amount?: string
   cedula_no: string
   cedula_issued_at?: number | null
   or_no: string
@@ -59,6 +66,29 @@ export type TreasuryFeeAssessmentRecord = {
   additional_fees: TreasuryAdditionalFeeLine[]
   lgu_total: number
   grand_total: number
+  createdAt: number
+  updatedAt?: number
+  staff_uid?: string | null
+  staff_email?: string | null
+}
+
+export type TreasuryReassessmentDifferenceType = "balanced" | "excess" | "insufficient"
+
+export type TreasuryReassessmentRecord = {
+  uid: string
+  application_uid: string
+  assessment_status?: string
+  source_assessment_uid?: string
+  previous_fees: Record<string, TreasuryFeeLine>
+  updated_fees: Record<string, TreasuryFeeLine>
+  previous_additional_fees: TreasuryAdditionalFeeLine[]
+  updated_additional_fees: TreasuryAdditionalFeeLine[]
+  previous_lgu_total: number
+  updated_lgu_total: number
+  previous_grand_total: number
+  updated_grand_total: number
+  difference_amount: number
+  difference_type: TreasuryReassessmentDifferenceType
   createdAt: number
   updatedAt?: number
   staff_uid?: string | null
@@ -108,6 +138,20 @@ export async function findTreasuryByEmail(email: string) {
 }
 
 const normalizeOptionalString = (value: unknown) => (typeof value === "string" ? value.trim() : "")
+const normalizeAmountInput = (value: unknown) => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value)
+  }
+  return normalizeOptionalString(value)
+}
+
+const normalizeAssessmentStatus = (value: unknown) => {
+  const normalized = normalizeOptionalString(value).toLowerCase()
+  if (normalized === "paid" || normalized === "unpaid" || normalized === "ongoing") {
+    return normalized
+  }
+  return "ongoing"
+}
 
 const normalizeOptionalNumber = (value: unknown): number | null => {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -202,6 +246,15 @@ const normalizeTreasuryFeeAssessmentRecord = (
     uid: normalizeOptionalString(payload?.uid) || key,
     application_uid: applicationUid,
     client_uid: legacyClientUid || undefined,
+    assessment_status: normalizeAssessmentStatus(payload?.assessment_status ?? payload?.status),
+    reassessment_status: normalizeOptionalString(payload?.reassessment_status) || undefined,
+    reassessed_at:
+      normalizeOptionalNumber(payload?.reassessed_at) ??
+      normalizeOptionalNumber(payload?.reassessedAt),
+    salary_amount: normalizeAmountInput(payload?.salary_amount ?? payload?.salaryAmount) || undefined,
+    gross_sales_amount:
+      normalizeAmountInput(payload?.gross_sales_amount ?? payload?.grossSalesAmount) || undefined,
+    capital_amount: normalizeAmountInput(payload?.capital_amount ?? payload?.capitalAmount) || undefined,
     cedula_no: cedulaNo,
     cedula_issued_at: cedulaIssuedAt,
     or_no: orNo,
@@ -210,6 +263,78 @@ const normalizeTreasuryFeeAssessmentRecord = (
     additional_fees: additionalFees,
     lgu_total: lguTotal,
     grand_total: grandTotal,
+    createdAt: normalizeOptionalNumber(payload?.createdAt) ?? 0,
+    updatedAt: normalizeOptionalNumber(payload?.updatedAt) ?? undefined,
+    staff_uid: normalizeOptionalString(payload?.staff_uid) || null,
+    staff_email: normalizeOptionalString(payload?.staff_email) || null,
+  }
+}
+
+const deriveDifferenceTypeFromTotals = (
+  previousGrandTotal: number,
+  updatedGrandTotal: number
+): TreasuryReassessmentDifferenceType => {
+  if (previousGrandTotal > updatedGrandTotal) return "excess"
+  if (previousGrandTotal < updatedGrandTotal) return "insufficient"
+  return "balanced"
+}
+
+const getLineTotalValue = (line: TreasuryFeeLine | TreasuryAdditionalFeeLine) =>
+  Number.isFinite(line.total) ? line.total : (line.amount ?? 0) + (line.penalty ?? 0)
+
+const hasAnyNonZeroFeeValues = (
+  fees: Record<string, TreasuryFeeLine>,
+  additionalFees: TreasuryAdditionalFeeLine[]
+) =>
+  Object.values(fees).some((line) => getLineTotalValue(line) !== 0) ||
+  additionalFees.some((line) => getLineTotalValue(line) !== 0)
+
+const normalizeTreasuryReassessmentRecord = (
+  key: string,
+  payload: Record<string, unknown>
+): TreasuryReassessmentRecord | null => {
+  const applicationUid =
+    normalizeOptionalString(payload?.application_uid) || normalizeOptionalString(payload?.client_uid)
+  if (!applicationUid) {
+    return null
+  }
+
+  const previousFees = normalizeFees(payload?.previous_fees ?? payload?.fees_before)
+  const updatedFees = normalizeFees(payload?.updated_fees ?? payload?.fees_after)
+  const previousAdditionalFees = Array.isArray(payload?.previous_additional_fees)
+    ? normalizeAdditionalFees(payload?.previous_additional_fees)
+    : normalizeAdditionalFees(payload?.previousAdditionalFees)
+  const updatedAdditionalFees = Array.isArray(payload?.updated_additional_fees)
+    ? normalizeAdditionalFees(payload?.updated_additional_fees)
+    : normalizeAdditionalFees(payload?.updatedAdditionalFees)
+  const previousLguTotal = normalizeOptionalNumber(payload?.previous_lgu_total) ?? 0
+  const updatedLguTotal = normalizeOptionalNumber(payload?.updated_lgu_total) ?? 0
+  const previousGrandTotal = normalizeOptionalNumber(payload?.previous_grand_total) ?? 0
+  const updatedGrandTotal = normalizeOptionalNumber(payload?.updated_grand_total) ?? 0
+  const hasUpdatedFeeValues = hasAnyNonZeroFeeValues(updatedFees, updatedAdditionalFees)
+  const normalizedDifferenceType = hasUpdatedFeeValues
+    ? deriveDifferenceTypeFromTotals(previousGrandTotal, updatedGrandTotal)
+    : "balanced"
+  const normalizedDifferenceAmount = hasUpdatedFeeValues
+    ? normalizeOptionalNumber(payload?.difference_amount) ?? Math.abs(updatedGrandTotal - previousGrandTotal)
+    : 0
+  const rawAssessmentStatus = normalizeOptionalString(payload?.assessment_status)
+
+  return {
+    uid: normalizeOptionalString(payload?.uid) || key,
+    application_uid: applicationUid,
+    assessment_status: rawAssessmentStatus ? normalizeAssessmentStatus(rawAssessmentStatus) : undefined,
+    source_assessment_uid: normalizeOptionalString(payload?.source_assessment_uid) || undefined,
+    previous_fees: previousFees,
+    updated_fees: updatedFees,
+    previous_additional_fees: previousAdditionalFees,
+    updated_additional_fees: updatedAdditionalFees,
+    previous_lgu_total: previousLguTotal,
+    updated_lgu_total: updatedLguTotal,
+    previous_grand_total: previousGrandTotal,
+    updated_grand_total: updatedGrandTotal,
+    difference_amount: normalizedDifferenceAmount,
+    difference_type: normalizedDifferenceType,
     createdAt: normalizeOptionalNumber(payload?.createdAt) ?? 0,
     updatedAt: normalizeOptionalNumber(payload?.updatedAt) ?? undefined,
     staff_uid: normalizeOptionalString(payload?.staff_uid) || null,
@@ -263,10 +388,180 @@ export function watchTreasuryFeesByClient(
   )
 }
 
+export function watchTreasuryReassessmentsByApplication(
+  onChange: (records: Record<string, TreasuryReassessmentRecord>) => void,
+  onError?: (error: Error) => void
+) {
+  const collectionRef = ref(realtimeDb, TREASURY_REASSESSMENT_PATH)
+
+  return onValue(
+    collectionRef,
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        onChange({})
+        return
+      }
+
+      const rows = snapshot.val() as Record<string, Record<string, unknown>>
+      const byApplication: Record<string, TreasuryReassessmentRecord> = {}
+
+      Object.entries(rows).forEach(([key, payload]) => {
+        const normalized = normalizeTreasuryReassessmentRecord(key, payload)
+        if (!normalized) {
+          return
+        }
+
+        const existing = byApplication[normalized.application_uid]
+        if (!existing) {
+          byApplication[normalized.application_uid] = normalized
+          return
+        }
+
+        const existingTs = existing.updatedAt ?? existing.createdAt ?? 0
+        const incomingTs = normalized.updatedAt ?? normalized.createdAt ?? 0
+        if (incomingTs >= existingTs) {
+          byApplication[normalized.application_uid] = normalized
+        }
+      })
+
+      onChange(byApplication)
+    },
+    (error) => {
+      if (onError) {
+        onError(error as Error)
+      }
+    }
+  )
+}
+
+type SaveTreasuryReassessmentInput = {
+  applicationUid: string
+  sourceAssessmentUid?: string
+  assessmentStatus?: string
+  previousFees: Record<string, TreasuryFeeLine>
+  updatedFees: Record<string, TreasuryFeeLine>
+  previousAdditionalFees?: TreasuryAdditionalFeeLine[]
+  updatedAdditionalFees?: TreasuryAdditionalFeeLine[]
+  previousLguTotal: number
+  updatedLguTotal: number
+  previousGrandTotal: number
+  updatedGrandTotal: number
+  staffUid?: string | null
+  staffEmail?: string | null
+}
+
+export async function saveTreasuryReassessment({
+  applicationUid,
+  sourceAssessmentUid = "",
+  assessmentStatus = "paid",
+  previousFees,
+  updatedFees,
+  previousAdditionalFees = [],
+  updatedAdditionalFees = [],
+  previousLguTotal,
+  updatedLguTotal,
+  previousGrandTotal,
+  updatedGrandTotal,
+  staffUid = null,
+  staffEmail = null,
+}: SaveTreasuryReassessmentInput) {
+  const normalizedApplicationUid = applicationUid.trim()
+  if (!normalizedApplicationUid) {
+    throw new Error("Application UID is required.")
+  }
+  const normalizedAssessmentStatus = normalizeAssessmentStatus(assessmentStatus)
+
+  const normalizedPreviousGrandTotal = Number.isFinite(previousGrandTotal) ? previousGrandTotal : 0
+  const normalizedUpdatedGrandTotal = Number.isFinite(updatedGrandTotal) ? updatedGrandTotal : 0
+  const normalizedPreviousLguTotal = Number.isFinite(previousLguTotal) ? previousLguTotal : 0
+  const normalizedUpdatedLguTotal = Number.isFinite(updatedLguTotal) ? updatedLguTotal : 0
+  const hasUpdatedFeeValues = hasAnyNonZeroFeeValues(updatedFees, updatedAdditionalFees)
+  const differenceAmount = hasUpdatedFeeValues
+    ? Math.abs(normalizedUpdatedGrandTotal - normalizedPreviousGrandTotal)
+    : 0
+  const differenceType = hasUpdatedFeeValues
+    ? deriveDifferenceTypeFromTotals(normalizedPreviousGrandTotal, normalizedUpdatedGrandTotal)
+    : "balanced"
+  const now = Date.now()
+
+  const collectionRef = ref(realtimeDb, TREASURY_REASSESSMENT_PATH)
+  const existingByApplicationQuery = dbQuery(
+    collectionRef,
+    orderByChild("application_uid"),
+    equalTo(normalizedApplicationUid)
+  )
+  const existingSnapshot = await get(existingByApplicationQuery)
+  let existingKey: string | null = null
+  let existingTimestamp = -1
+
+  if (existingSnapshot.exists()) {
+    existingSnapshot.forEach((child) => {
+      const childPayload = (child.val() ?? {}) as Record<string, unknown>
+      const childTimestamp =
+        normalizeOptionalNumber(childPayload.updatedAt) ??
+        normalizeOptionalNumber(childPayload.createdAt) ??
+        0
+      if (childTimestamp >= existingTimestamp) {
+        existingTimestamp = childTimestamp
+        existingKey = child.key
+      }
+      return false
+    })
+  }
+
+  const normalizedPayload = {
+    application_uid: normalizedApplicationUid,
+    // Keep legacy key during transition so writes still pass on older rule sets.
+    client_uid: normalizedApplicationUid,
+    assessment_status: normalizedAssessmentStatus,
+    source_assessment_uid: sourceAssessmentUid.trim(),
+    previous_fees: previousFees,
+    updated_fees: updatedFees,
+    previous_additional_fees: previousAdditionalFees,
+    updated_additional_fees: updatedAdditionalFees,
+    previous_lgu_total: normalizedPreviousLguTotal,
+    updated_lgu_total: normalizedUpdatedLguTotal,
+    previous_grand_total: normalizedPreviousGrandTotal,
+    updated_grand_total: normalizedUpdatedGrandTotal,
+    difference_amount: differenceAmount,
+    difference_type: differenceType,
+    updatedAt: now,
+    staff_uid: staffUid,
+    staff_email: staffEmail,
+  }
+
+  if (existingKey) {
+    const existingRef = ref(realtimeDb, `${TREASURY_REASSESSMENT_PATH}/${existingKey}`)
+    await update(existingRef, {
+      uid: existingKey,
+      ...normalizedPayload,
+    })
+    return existingKey
+  }
+
+  const newRef = push(collectionRef)
+  if (!newRef.key) {
+    throw new Error("Unable to allocate treasury reassessment UID.")
+  }
+
+  await set(newRef, {
+    uid: newRef.key,
+    ...normalizedPayload,
+    createdAt: now,
+  })
+
+  return newRef.key
+}
+
 type SaveTreasuryFeeAssessmentInput = {
   applicationUid: string
   cedulaNumber: string
   officialReceiptNumber: string
+  assessmentStatus?: string
+  salaryAmount?: string
+  grossSalesAmount?: string
+  capitalAmount?: string
+  allowMissingDocumentReferences?: boolean
   fees: Record<string, TreasuryFeeLine>
   additionalFees: TreasuryAdditionalFeeLine[]
   lguTotal: number
@@ -280,6 +575,10 @@ const saveTreasuryFeeAssessmentViaApi = async ({
   applicationUid,
   cedulaNumber,
   officialReceiptNumber,
+  assessmentStatus,
+  salaryAmount,
+  grossSalesAmount,
+  capitalAmount,
   fees,
   additionalFees,
   lguTotal,
@@ -298,6 +597,10 @@ const saveTreasuryFeeAssessmentViaApi = async ({
       applicationUid,
       cedulaNumber,
       officialReceiptNumber,
+      assessmentStatus,
+      salaryAmount,
+      grossSalesAmount,
+      capitalAmount,
       fees,
       additionalFees,
       lguTotal,
@@ -330,6 +633,11 @@ export async function saveTreasuryFeeAssessment({
   applicationUid,
   cedulaNumber,
   officialReceiptNumber,
+  assessmentStatus = "ongoing",
+  salaryAmount = "",
+  grossSalesAmount = "",
+  capitalAmount = "",
+  allowMissingDocumentReferences = false,
   fees,
   additionalFees,
   lguTotal,
@@ -340,15 +648,23 @@ export async function saveTreasuryFeeAssessment({
 }: SaveTreasuryFeeAssessmentInput) {
   const normalizedCedulaNo = cedulaNumber.trim()
   const normalizedOrNo = officialReceiptNumber.trim()
-  if (!normalizedCedulaNo || !normalizedOrNo) {
+  const normalizedSalaryAmount = salaryAmount.trim()
+  const normalizedGrossSalesAmount = grossSalesAmount.trim()
+  const normalizedCapitalAmount = capitalAmount.trim()
+  if (!allowMissingDocumentReferences && (!normalizedCedulaNo || !normalizedOrNo)) {
     throw new Error("Cedula Number and Official Receipt Number are required.")
   }
+  const normalizedAssessmentStatus = normalizeAssessmentStatus(assessmentStatus)
 
   if (authIdToken) {
     return saveTreasuryFeeAssessmentViaApi({
       applicationUid,
       cedulaNumber: normalizedCedulaNo,
       officialReceiptNumber: normalizedOrNo,
+      assessmentStatus: normalizedAssessmentStatus,
+      salaryAmount: normalizedSalaryAmount,
+      grossSalesAmount: normalizedGrossSalesAmount,
+      capitalAmount: normalizedCapitalAmount,
       fees,
       additionalFees,
       lguTotal,
@@ -416,6 +732,10 @@ export async function saveTreasuryFeeAssessment({
     application_uid: normalizedApplicationUid,
     // Keep legacy key during transition so writes still pass on older rule sets.
     client_uid: normalizedApplicationUid,
+    assessment_status: normalizedAssessmentStatus,
+    salary_amount: normalizedSalaryAmount,
+    gross_sales_amount: normalizedGrossSalesAmount,
+    capital_amount: normalizedCapitalAmount,
     cedula_no: normalizedCedulaNo,
     cedula_issued_at: cedulaIssuedAt,
     or_no: normalizedOrNo,

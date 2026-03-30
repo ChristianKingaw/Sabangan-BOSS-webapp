@@ -19,10 +19,16 @@ const isTreasuryAccount = async (email: string) => {
     .ref(TREASURY_USERS_PATH)
     .orderByChild("email")
     .equalTo(normalizedEmail)
-    .limitToFirst(1)
     .get()
 
   return treasurySnapshot.exists()
+}
+
+const normalizeErrorCode = (value: unknown) => normalizeOptionalString(value).toLowerCase()
+
+const isInvalidAuthTokenError = (error: unknown) => {
+  const code = normalizeErrorCode((error as { code?: unknown } | null)?.code)
+  return code.startsWith("auth/")
 }
 
 export async function GET(request: NextRequest) {
@@ -36,7 +42,18 @@ export async function GET(request: NextRequest) {
     }
 
     const idToken = authHeader.slice(7).trim()
-    const decoded = await adminAuth.verifyIdToken(idToken)
+    let decoded: Awaited<ReturnType<typeof adminAuth.verifyIdToken>>
+    try {
+      decoded = await adminAuth.verifyIdToken(idToken)
+    } catch (error) {
+      if (isInvalidAuthTokenError(error)) {
+        return NextResponse.json(
+          { error: "Authentication token is invalid or expired." },
+          { status: 401 }
+        )
+      }
+      throw error
+    }
     const userEmail = normalizeOptionalString(decoded.email).toLowerCase()
     if (!userEmail) {
       return NextResponse.json(
@@ -67,4 +84,3 @@ export async function GET(request: NextRequest) {
     )
   }
 }
-

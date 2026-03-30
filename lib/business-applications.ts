@@ -105,6 +105,22 @@ export const parseDateToTimestamp = (value?: string) => {
   return Number.isNaN(time) ? undefined : time
 }
 
+const formatTimestampToDateString = (value?: number) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return ""
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return ""
+  }
+
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
 const coerceTimestamp = (value: unknown) => {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value
@@ -227,9 +243,19 @@ export const normalizeBusinessApplication = (id: string, payload: any): Business
   const applicantUid = normalizeWhitespace(
     String(form?.applicantUid ?? meta?.applicantUid ?? payload?.applicantUid ?? "")
   )
-  const applicationDate: string = form.dateOfApplication ?? form.registrationDate ?? ""
-  const submittedAt =
-    parseDateToTimestamp(applicationDate) ?? (typeof meta.updatedAt === "number" ? meta.updatedAt : undefined)
+  const fallbackApplicationDate = normalizeWhitespace(
+    String(form.dateOfApplication ?? form.registrationDate ?? "")
+  )
+  const canonicalTimestamp =
+    coerceTimestamp(meta.submittedAt) ??
+    coerceTimestamp(meta.createdAt) ??
+    coerceTimestamp(meta.updatedAt) ??
+    coerceTimestamp(payload?.submittedAt) ??
+    coerceTimestamp(payload?.createdAt) ??
+    coerceTimestamp(payload?.updatedAt) ??
+    parseDateToTimestamp(fallbackApplicationDate)
+  const applicationDate = formatTimestampToDateString(canonicalTimestamp) || fallbackApplicationDate
+  const submittedAt = canonicalTimestamp
   const applicantName = normalizeWhitespace([form.firstName, form.middleName, form.lastName].filter(Boolean).join(" "))
   const applicationType: ApplicationType = form.applicationType === "Renewal" ? "Renewal" : "New"
   const normalizedRequirements = normalizeRequirements(payload?.requirements)
