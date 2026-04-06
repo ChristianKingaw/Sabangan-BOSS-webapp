@@ -50,7 +50,7 @@ export default function LoginForm() {
         if (user) {
           void (async () => {
             try {
-              const idToken = await user.getIdToken(true)
+              const idToken = await user.getIdToken()
               await verifyTreasuryAccess(idToken)
               router.replace("/treasury/home")
             } catch (err) {
@@ -92,9 +92,7 @@ export default function LoginForm() {
 
     setLoading(true)
     try {
-      const credential = await signInWithEmailAndPassword(auth, normalizedEmail, password)
-      const idToken = await credential.user.getIdToken(true)
-      await verifyTreasuryAccess(idToken)
+      await signInWithEmailAndPassword(auth, normalizedEmail, password)
 
       if (typeof window !== "undefined") {
         if (remember) {
@@ -104,8 +102,7 @@ export default function LoginForm() {
         }
       }
 
-      setSuccess("Signed in successfully.")
-      router.replace("/treasury/home")
+      setSuccess("Signed in successfully. Verifying treasury access...")
       setPassword("")
     } catch (err) {
       if (auth.currentUser) {

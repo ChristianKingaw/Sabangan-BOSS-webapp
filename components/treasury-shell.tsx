@@ -31,7 +31,6 @@ export default function TreasuryShell({ activeNav, title, description, children 
 
   useEffect(() => {
     let cancelled = false
-    let initialAuthResolved = false
 
     const applyAuthUser = (user: ReturnType<typeof getAuth>["currentUser"]) => {
       if (cancelled) return
@@ -47,38 +46,19 @@ export default function TreasuryShell({ activeNav, title, description, children 
       setLoading(false)
     }
 
+    setLoading(true)
     const unsubscribe = onAuthStateChanged(
       auth,
       (user) => {
-        if (!initialAuthResolved) return
         applyAuthUser(user)
       },
       () => {
-        if (!initialAuthResolved || cancelled) return
+        if (cancelled) return
         setEmail("")
         setLoading(false)
         router.replace("/treasury")
       }
     )
-
-    const waitForInitialAuthState = async () => {
-      try {
-        const authWithReady = auth as typeof auth & { authStateReady?: () => Promise<void> }
-        if (typeof authWithReady.authStateReady === "function") {
-          await authWithReady.authStateReady()
-        } else {
-          await new Promise((resolve) => setTimeout(resolve, 300))
-        }
-      } catch {
-        // Fall through and use the best available currentUser snapshot.
-      }
-
-      if (cancelled) return
-      initialAuthResolved = true
-      applyAuthUser(auth.currentUser)
-    }
-
-    void waitForInitialAuthState()
 
     return () => {
       cancelled = true
