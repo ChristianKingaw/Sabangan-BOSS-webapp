@@ -29,16 +29,40 @@ export default function MhoShell({ activeNav, title, description, children }: Mh
   const [email, setEmail] = useState("")
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    let cancelled = false
+
+    const applyAuthUser = (user: ReturnType<typeof getAuth>["currentUser"]) => {
+      if (cancelled) return
+
       if (!user) {
+        setEmail("")
+        setLoading(false)
         router.replace("/mho")
         return
       }
+
       setEmail(user.email ?? "")
       setLoading(false)
-    })
+    }
 
-    return unsubscribe
+    setLoading(true)
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (user) => {
+        applyAuthUser(user)
+      },
+      () => {
+        if (cancelled) return
+        setEmail("")
+        setLoading(false)
+        router.replace("/mho")
+      }
+    )
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [auth, router])
 
   const handleSignOut = async () => {

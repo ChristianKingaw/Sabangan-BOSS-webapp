@@ -25,7 +25,7 @@ const normalizeAssessmentStatus = (value: unknown) => {
 const normalizeOptionalNumber = (value: unknown): number | null => {
   if (typeof value === "number" && Number.isFinite(value)) return value
   if (typeof value === "string") {
-    const parsed = Number(value.trim())
+    const parsed = Number(value.replace(/,/g, "").trim())
     if (Number.isFinite(parsed)) return parsed
   }
   return null

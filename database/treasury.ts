@@ -158,7 +158,7 @@ const normalizeOptionalNumber = (value: unknown): number | null => {
     return value
   }
   if (typeof value === "string") {
-    const parsed = Number(value.trim())
+    const parsed = Number(value.replace(/,/g, "").trim())
     if (Number.isFinite(parsed)) {
       return parsed
     }

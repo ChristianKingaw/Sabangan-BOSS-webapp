@@ -35,6 +35,11 @@ type AdditionalFeeInput = { id: string; name: string; amount: string; penalty: s
 type AssessmentBasisInput = { grossSales: string; capital: string }
 type TreasuryAssessmentStatus = "paid" | "unpaid" | "ongoing"
 type MobileFeeBreakdownLine = { label: string; amount: number }
+type MobileMayorPermitBreakdownLine = { label: string; amount: number; note?: string }
+type MobileMayorPermitBreakdown = {
+  lines: MobileMayorPermitBreakdownLine[]
+  total: number | null
+}
 type MobileCalculatedFeeReference = {
   applicationUid: string
   basisType: string
@@ -45,6 +50,7 @@ type MobileCalculatedFeeReference = {
   sourceLabel: string
   computedAt: number | null
   breakdown: MobileFeeBreakdownLine[]
+  mayorsPermitBreakdown: MobileMayorPermitBreakdown | null
 }
 
 const ESTIMATED_FEES_PATH = "estimated_fees"
@@ -188,10 +194,167 @@ const normalizeOptionalNumberValue = (value: unknown): number | null => {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-const normalizeBreakdownNode = (value: unknown): MobileFeeBreakdownLine[] => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return []
+const normalizeObjectValue = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
 
-  return Object.entries(value as Record<string, unknown>)
+const MAYORS_PERMIT_COMPONENT_LABELS: Record<string, string> = {
+  alcohol: "Alcohol",
+  base: "Base",
+  basetotal: "Base Total",
+  lpg: "LPG",
+  retailerstoreitemstotal: "Retailer Store Items Total",
+  total: "Total",
+  tobaccoretail: "Tobacco Retail",
+  tobaccowholesale: "Tobacco Wholesale",
+}
+
+const MAYORS_PERMIT_COMPONENT_ORDER = [
+  "base",
+  "alcohol",
+  "lpg",
+  "tobaccoretail",
+  "tobaccowholesale",
+  "retailerstoreitemstotal",
+  "total",
+]
+
+const normalizeMayorPermitComponentKey = (value: string) =>
+  value.replace(/[_-]+/g, "").replace(/\s+/g, "").toLowerCase()
+
+const formatMayorPermitComponentLabel = (value: string) => {
+  const normalizedKey = normalizeMayorPermitComponentKey(value)
+  const explicitLabel = MAYORS_PERMIT_COMPONENT_LABELS[normalizedKey]
+  if (explicitLabel) return explicitLabel
+
+  const readable = value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+
+  if (!readable) return "Fee"
+
+  return readable
+    .split(" ")
+    .map((segment) => {
+      const lower = segment.toLowerCase()
+      if (lower === "lpg") return "LPG"
+      if (lower === "dst") return "D.S.T."
+      return lower.charAt(0).toUpperCase() + lower.slice(1)
+    })
+    .join(" ")
+}
+
+const sortMayorPermitComponentKeys = (keys: string[]) =>
+  [...keys].sort((left, right) => {
+    const leftKey = normalizeMayorPermitComponentKey(left)
+    const rightKey = normalizeMayorPermitComponentKey(right)
+    const leftIndex = MAYORS_PERMIT_COMPONENT_ORDER.indexOf(leftKey)
+    const rightIndex = MAYORS_PERMIT_COMPONENT_ORDER.indexOf(rightKey)
+    const leftRank = leftIndex === -1 ? MAYORS_PERMIT_COMPONENT_ORDER.length : leftIndex
+    const rightRank = rightIndex === -1 ? MAYORS_PERMIT_COMPONENT_ORDER.length : rightIndex
+
+    if (leftRank !== rightRank) return leftRank - rightRank
+    return left.localeCompare(right)
+  })
+
+const normalizeMayorPermitActivityLines = (value: unknown): MobileMayorPermitBreakdownLine[] => {
+  const activityNode = normalizeObjectValue(value)
+  const lines: MobileMayorPermitBreakdownLine[] = []
+
+  Object.entries(activityNode).forEach(([activityLabel, rawActivityValue]) => {
+    const detailNode = normalizeObjectValue(rawActivityValue)
+    const normalizedActivityLabel = normalizeOptionalStringValue(activityLabel) || "Activity"
+    const baseNote = normalizeOptionalStringValue(detailNode.baseNote)
+
+    sortMayorPermitComponentKeys(Object.keys(detailNode)).forEach((detailKey) => {
+      const normalizedDetailKey = normalizeMayorPermitComponentKey(detailKey)
+      if (normalizedDetailKey === "basenote" || normalizedDetailKey === "total") {
+        return
+      }
+
+      const amount = normalizeOptionalNumberValue(detailNode[detailKey])
+      if (amount === null) return
+
+      lines.push({
+        label: `${normalizedActivityLabel} - ${formatMayorPermitComponentLabel(detailKey)}`,
+        amount,
+        note:
+          normalizedDetailKey === "base" && baseNote
+            ? baseNote
+            : undefined,
+      })
+    })
+  })
+
+  return lines
+}
+
+const normalizeMayorPermitSupplementaryLines = (
+  value: unknown,
+  prefix: string
+): MobileMayorPermitBreakdownLine[] => {
+  const node = normalizeObjectValue(value)
+
+  return sortMayorPermitComponentKeys(Object.keys(node))
+    .map((key) => {
+      const amount = normalizeOptionalNumberValue(node[key])
+      if (amount === null) return null
+
+      return {
+        label: `${prefix} - ${formatMayorPermitComponentLabel(key)}`,
+        amount,
+      } satisfies MobileMayorPermitBreakdownLine
+    })
+    .filter((entry): entry is MobileMayorPermitBreakdownLine => entry !== null)
+}
+
+const normalizeMayorPermitBreakdown = (
+  breakdownValue: unknown,
+  byLobValue: unknown,
+  fallbackTotalValue: unknown
+): MobileMayorPermitBreakdown | null => {
+  const breakdownNode = normalizeObjectValue(breakdownValue)
+  const primaryActivityLines = normalizeMayorPermitActivityLines(breakdownNode.byActivity)
+  const lines =
+    primaryActivityLines.length > 0
+      ? primaryActivityLines
+      : normalizeMayorPermitActivityLines(byLobValue)
+
+  const normalizedLines = [...lines]
+
+  if (normalizedLines.length === 0) {
+    const baseTotal = normalizeOptionalNumberValue(breakdownNode.baseTotal)
+    if (baseTotal !== null) {
+      normalizedLines.push({ label: "Base Total", amount: baseTotal })
+    }
+
+    normalizedLines.push(
+      ...normalizeMayorPermitSupplementaryLines(
+        breakdownNode.retailerStoreItems,
+        "Retailer Store Items"
+      )
+    )
+  }
+
+  const total =
+    normalizeOptionalNumberValue(breakdownNode.total) ??
+    normalizeOptionalNumberValue(fallbackTotalValue)
+
+  if (normalizedLines.length === 0 && total === null) {
+    return null
+  }
+
+  return {
+    lines: normalizedLines,
+    total,
+  }
+}
+
+const normalizeBreakdownNode = (value: unknown): MobileFeeBreakdownLine[] => {
+  return Object.entries(normalizeObjectValue(value))
     .map(([label, rawAmount]) => {
       const amount = normalizeOptionalNumberValue(rawAmount)
       if (amount === null) return null
@@ -205,9 +368,7 @@ const normalizeBreakdownNode = (value: unknown): MobileFeeBreakdownLine[] => {
 }
 
 const normalizeOtherEstimatedBreakdown = (value: unknown): MobileFeeBreakdownLine[] => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return []
-
-  return Object.entries(value as Record<string, unknown>)
+  return Object.entries(normalizeObjectValue(value))
     .map(([name, rawAmount]) => {
       const amount = normalizeOptionalNumberValue(rawAmount)
       if (amount === null) return null
@@ -221,8 +382,7 @@ const normalizeOtherEstimatedBreakdown = (value: unknown): MobileFeeBreakdownLin
 }
 
 const normalizeEstimatedFeesBreakdown = (value: unknown): MobileFeeBreakdownLine[] => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return []
-  const node = value as Record<string, unknown>
+  const node = normalizeObjectValue(value)
   const detailedOthers = normalizeOtherEstimatedBreakdown(node.others)
   const rows: MobileFeeBreakdownLine[] = []
 
@@ -245,16 +405,17 @@ const normalizeEstimatedFeeReference = (
   appId: string,
   payload: Record<string, unknown>
 ): MobileCalculatedFeeReference | null => {
-  const estimatedTreasuryFeesRaw = payload.estimated_treasury_fees
-  const estimatedTreasuryFeesNode =
-    estimatedTreasuryFeesRaw && typeof estimatedTreasuryFeesRaw === "object" && !Array.isArray(estimatedTreasuryFeesRaw)
-      ? (estimatedTreasuryFeesRaw as Record<string, unknown>)
-      : {}
+  const estimatedTreasuryFeesNode = normalizeObjectValue(payload.estimated_treasury_fees)
 
   const applicationUid = normalizeOptionalStringValue(payload.application_uid) || appId.trim()
   if (!applicationUid) return null
 
   const breakdown = normalizeEstimatedFeesBreakdown(estimatedTreasuryFeesNode)
+  const mayorsPermitBreakdown = normalizeMayorPermitBreakdown(
+    estimatedTreasuryFeesNode.mayors_permit_breakdown ?? estimatedTreasuryFeesNode.mayorsPermitBreakdown,
+    estimatedTreasuryFeesNode.mayors_permit_by_lob ?? estimatedTreasuryFeesNode.mayorsPermitByLob,
+    estimatedTreasuryFeesNode.mayors_permit
+  )
   const estimatedTotal =
     normalizeOptionalNumberValue(estimatedTreasuryFeesNode.estimated_total) ??
     normalizeOptionalNumberValue(payload.estimated_treasury_fees_total)
@@ -267,7 +428,12 @@ const normalizeEstimatedFeeReference = (
     normalizeOptionalNumberValue(payload.submittedAt) ??
     normalizeOptionalNumberValue(payload.createdAt)
 
-  if (estimatedTotal === null && basisTotal === null && breakdown.length === 0) {
+  if (
+    estimatedTotal === null &&
+    basisTotal === null &&
+    breakdown.length === 0 &&
+    !mayorsPermitBreakdown
+  ) {
     return null
   }
 
@@ -281,6 +447,7 @@ const normalizeEstimatedFeeReference = (
     sourceLabel: `${ESTIMATED_FEES_PATH}/${applicationUid}`,
     computedAt,
     breakdown,
+    mayorsPermitBreakdown,
   }
 }
 
@@ -324,17 +491,14 @@ const normalizeLegacyBusinessFeeReference = (
   }
 
   const feesNode = feesRaw as Record<string, unknown>
-  const inputsRaw = feesNode.inputs
-  const inputsNode =
-    inputsRaw && typeof inputsRaw === "object" && !Array.isArray(inputsRaw)
-      ? (inputsRaw as Record<string, unknown>)
-      : {}
-  const metaRaw = payload.meta
-  const metaNode =
-    metaRaw && typeof metaRaw === "object" && !Array.isArray(metaRaw)
-      ? (metaRaw as Record<string, unknown>)
-      : {}
+  const inputsNode = normalizeObjectValue(feesNode.inputs)
+  const metaNode = normalizeObjectValue(payload.meta)
   const breakdown = normalizeBreakdownNode(feesNode.breakdown)
+  const mayorsPermitBreakdown = normalizeMayorPermitBreakdown(
+    inputsNode.mayorsPermitBreakdown,
+    inputsNode.mayorsPermitByLob,
+    inputsNode.mayorsPermitTotal
+  )
   const estimatedTotal = normalizeOptionalNumberValue(feesNode.total)
   const basisTotal =
     normalizeOptionalNumberValue(inputsNode.basisTotal) ??
@@ -346,7 +510,12 @@ const normalizeLegacyBusinessFeeReference = (
     normalizeOptionalNumberValue(metaNode.feesComputedAt) ??
     normalizeOptionalNumberValue(metaNode.updatedAt)
 
-  if (estimatedTotal === null && basisTotal === null && breakdown.length === 0) {
+  if (
+    estimatedTotal === null &&
+    basisTotal === null &&
+    breakdown.length === 0 &&
+    !mayorsPermitBreakdown
+  ) {
     return null
   }
 
@@ -363,6 +532,7 @@ const normalizeLegacyBusinessFeeReference = (
     sourceLabel: `business/business_application/${appId}/fees`,
     computedAt,
     breakdown,
+    mayorsPermitBreakdown,
   }
 }
 
@@ -441,6 +611,32 @@ const parseOptionalNumber = (value: string): number | null => {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+const formatAmountInputValue = (value: string) => {
+  const trimmed = value.trim()
+  if (!trimmed) return ""
+
+  const sanitized = trimmed
+    .replace(/,/g, "")
+    .replace(/[^\d.]/g, "")
+
+  if (!sanitized) return ""
+
+  const hasDecimal = sanitized.includes(".")
+  const [integerPartRaw, ...decimalParts] = sanitized.split(".")
+  const integerDigits = integerPartRaw.replace(/^0+(?=\d)/, "")
+  const integerForFormatting =
+    integerDigits || (hasDecimal ? "0" : "")
+  const formattedInteger = integerForFormatting
+    ? integerForFormatting.replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+    : ""
+
+  if (!hasDecimal) {
+    return formattedInteger
+  }
+
+  return `${formattedInteger || "0"}.${decimalParts.join("")}`
+}
+
 const formatCurrency = (value: number) =>
   value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -457,8 +653,10 @@ const formatBasisCell = (value: string) => {
 }
 
 const toAmountInputString = (value: unknown) => {
-  if (typeof value === "number" && Number.isFinite(value)) return String(value)
-  if (typeof value === "string") return value.trim()
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return formatAmountInputValue(String(value))
+  }
+  if (typeof value === "string") return formatAmountInputValue(value)
   return ""
 }
 
@@ -492,7 +690,7 @@ const getAssessmentBasisFromForm = (record: BusinessApplicationRecord): Assessme
       }
     })
 
-    if (highest !== null) return String(highest)
+    if (highest !== null) return formatAmountInputValue(String(highest))
     return fallback
   }
 
@@ -565,6 +763,14 @@ const hasAnyAssessmentValue = (value: ClientAssessmentInputs) => {
   })
 }
 
+const resolveAssessmentStatusForInputs = (
+  value: ClientAssessmentInputs,
+  preferredStatus: TreasuryAssessmentStatus
+): TreasuryAssessmentStatus =>
+  hasAnyAssessmentValue(value)
+    ? normalizeTreasuryAssessmentStatus(preferredStatus)
+    : "unpaid"
+
 const hasAnyFeeValue = (value: ClientAssessmentInputs) =>
   FEE_DEFINITIONS.some((item) => {
     const row = value.fees[item.key]
@@ -609,26 +815,29 @@ const normalizeAssessmentInputs = (value: ClientAssessmentInputs): ClientAssessm
   officialReceipt: value.officialReceipt.trim(),
   assessmentStatus: normalizeTreasuryAssessmentStatus(value.assessmentStatus),
   assessmentBasis: {
-    grossSales: value.assessmentBasis.grossSales.trim(),
-    capital: value.assessmentBasis.capital.trim(),
+    grossSales: formatAmountInputValue(value.assessmentBasis.grossSales),
+    capital: formatAmountInputValue(value.assessmentBasis.capital),
   },
   fees: FEE_DEFINITIONS.reduce((accumulator, item) => {
     const row = value.fees[item.key]
-    accumulator[item.key] = { amount: row?.amount.trim() ?? "", penalty: row?.penalty.trim() ?? "" }
+    accumulator[item.key] = {
+      amount: formatAmountInputValue(row?.amount ?? ""),
+      penalty: formatAmountInputValue(row?.penalty ?? ""),
+    }
     return accumulator
   }, {} as Record<FeeKey, FeeLineInput>),
   additionalFees: value.additionalFees
     .map((fee) => ({
       ...fee,
       name: fee.name.trim(),
-      amount: fee.amount.trim(),
-      penalty: fee.penalty.trim(),
+      amount: formatAmountInputValue(fee.amount),
+      penalty: formatAmountInputValue(fee.penalty),
     }))
     .filter((fee) => fee.name || fee.amount || fee.penalty),
 })
 
 const numberToInputValue = (value: number | null | undefined) =>
-  value === null || value === undefined ? "" : String(value)
+  value === null || value === undefined ? "" : formatAmountInputValue(String(value))
 
 const mapRecordToInputs = (record: TreasuryFeeAssessmentRecord | undefined): ClientAssessmentInputs => {
   const next = createEmptyAssessmentInputs()
@@ -636,7 +845,6 @@ const mapRecordToInputs = (record: TreasuryFeeAssessmentRecord | undefined): Cli
 
   next.cedula = typeof record.cedula_no === "string" ? record.cedula_no : ""
   next.officialReceipt = typeof record.or_no === "string" ? record.or_no : ""
-  next.assessmentStatus = normalizeTreasuryAssessmentStatus(record.assessment_status)
   next.assessmentBasis.grossSales = toAmountInputString(record.gross_sales_amount)
   next.assessmentBasis.capital = toAmountInputString(record.capital_amount)
 
@@ -654,6 +862,11 @@ const mapRecordToInputs = (record: TreasuryFeeAssessmentRecord | undefined): Cli
       amount: numberToInputValue(fee.amount),
       penalty: numberToInputValue(fee.penalty),
     })
+  )
+
+  next.assessmentStatus = resolveAssessmentStatusForInputs(
+    next,
+    normalizeTreasuryAssessmentStatus(record.assessment_status)
   )
 
   return next
@@ -1103,6 +1316,7 @@ export default function TreasuryClientsPage() {
     estimatedFeesByApplication,
     legacyMobileFeesByApplication,
   ])
+  const selectedMayorsPermitBreakdown = selectedMobileFeeReference?.mayorsPermitBreakdown ?? null
   const selectedBusinessBasisField = getBusinessBasisFieldByApplicationType(selectedClient?.applicationType)
   const selectedBusinessBasisLabel =
     selectedBusinessBasisField === "capital" ? "Capitalization (New Business)" : "Gross Sales (Renewal)"
@@ -1309,6 +1523,14 @@ export default function TreasuryClientsPage() {
     void openClientPreview(target)
   }, [previewApplicationUid, clientsLoading, clients, feesByClient])
 
+  const resetDialogState = useCallback(() => {
+    setSelectedClient(null)
+    setEditorValues(createEmptyAssessmentInputs())
+    setDialogInitialValues(createEmptyAssessmentInputs())
+    setIsDialogEditing(false)
+    setDialogFeedback(null)
+  }, [])
+
   const persistAssessmentStatus = async (
     record: BusinessApplicationRecord,
     assessmentStatus: TreasuryAssessmentStatus
@@ -1333,6 +1555,10 @@ export default function TreasuryClientsPage() {
         ...normalizedPrimary,
         fees: enforceBusinessTaxByApplicationType(primaryClient?.applicationType, normalizedPrimary.fees),
       }
+      const resolvedAssessmentStatus = resolveAssessmentStatusForInputs(
+        normalizedPrimaryForSave,
+        assessmentStatus
+      )
       const totals = computeAssessmentTotals(
         normalizedPrimaryForSave.fees,
         normalizedPrimaryForSave.additionalFees
@@ -1382,7 +1608,7 @@ export default function TreasuryClientsPage() {
             additionalFees: isPrimary ? additionalFeesPayload : [],
             lguTotal: isPrimary ? totals.lguTotal : 0,
             grandTotal: isPrimary ? totals.grandTotal : 0,
-            assessmentStatus,
+            assessmentStatus: resolvedAssessmentStatus,
             allowMissingDocumentReferences: true,
             staffUid: authUser.uid,
             staffEmail: authUser.email ?? null,
@@ -1396,31 +1622,258 @@ export default function TreasuryClientsPage() {
           const existing = next[groupApplicationUid] ?? createEmptyAssessmentInputs()
           next[groupApplicationUid] = {
             ...cloneAssessmentInputs(existing),
-            assessmentStatus,
+            assessmentStatus: resolvedAssessmentStatus,
           }
         })
         return next
       })
+      return true
     } catch (error) {
       console.error("Failed to persist treasury assessment status", error)
       const message = error instanceof Error ? error.message : "Unable to update status right now."
       toast.error(message)
+      return false
     } finally {
       setSavingClientUid(null)
     }
   }
 
+  const saveDialogAssessment = useCallback(
+    async ({
+      record,
+      values,
+      assessmentStatus,
+      allowMissingDocumentReferences,
+      successMessage,
+      closeAfterSave,
+    }: {
+      record: BusinessApplicationRecord
+      values: ClientAssessmentInputs
+      assessmentStatus: TreasuryAssessmentStatus
+      allowMissingDocumentReferences: boolean
+      successMessage?: string | null
+      closeAfterSave?: boolean
+    }) => {
+      const normalized = normalizeAssessmentInputs(values)
+      const resolvedAssessmentStatus = resolveAssessmentStatusForInputs(
+        normalized,
+        assessmentStatus
+      )
+
+      if (
+        resolvedAssessmentStatus !== "unpaid" &&
+        !allowMissingDocumentReferences &&
+        !hasRequiredDocumentReferences(normalized)
+      ) {
+        const message = "Cedula Number and Official Receipt Number are required before saving."
+        setDialogFeedback({ type: "error", message })
+        toast.error(message)
+        return false
+      }
+
+      const applicationUid = getApplicationUid(record)
+      const selectedGroup = applicantGroupsByApplication[applicationUid]
+      const primaryApplicationUid = selectedGroup?.primaryApplicationUid ?? applicationUid
+      const groupedApplicationUids = Array.from(
+        new Set(selectedGroup?.applicationUids ?? [applicationUid])
+      )
+
+      setSavingClientUid(applicationUid)
+      setDialogFeedback(null)
+
+      try {
+        if (!authUser) throw new Error("Treasury session expired. Please sign in again.")
+        const liveUser = auth.currentUser
+        if (!liveUser) throw new Error("Treasury session expired. Please sign in again.")
+        if (liveUser.uid !== authUser.uid) {
+          throw new Error("Treasury session changed. Please sign in again.")
+        }
+
+        const normalizedForSave: ClientAssessmentInputs = {
+          ...normalized,
+          assessmentStatus: resolvedAssessmentStatus,
+          assessmentBasis: enforceBusinessBasisByApplicationType(
+            record.applicationType,
+            normalized.assessmentBasis
+          ),
+        }
+        const primaryClient = clientByApplicationUid[primaryApplicationUid]
+        const normalizedForSaveWithTaxRule: ClientAssessmentInputs = {
+          ...normalizedForSave,
+          fees: enforceBusinessTaxByApplicationType(
+            primaryClient?.applicationType,
+            normalizedForSave.fees
+          ),
+        }
+
+        const totals = computeAssessmentTotals(
+          normalizedForSaveWithTaxRule.fees,
+          normalizedForSaveWithTaxRule.additionalFees
+        )
+        const feesPayload = FEE_DEFINITIONS.reduce((accumulator, item) => {
+          const row = normalizedForSaveWithTaxRule.fees[item.key]
+          const amount = parseOptionalNumber(row.amount)
+          const penalty = parseOptionalNumber(row.penalty)
+          accumulator[item.key] = {
+            amount,
+            penalty,
+            total: (amount ?? 0) + (penalty ?? 0),
+          } satisfies TreasuryFeeLine
+          return accumulator
+        }, {} as Record<string, TreasuryFeeLine>)
+        const additionalFeesPayload: TreasuryAdditionalFeeLine[] =
+          normalizedForSaveWithTaxRule.additionalFees.map((row) => {
+            const amount = parseOptionalNumber(row.amount)
+            const penalty = parseOptionalNumber(row.penalty)
+
+            return {
+              name: row.name.trim() || "Additional Fee",
+              amount,
+              penalty,
+              total: (amount ?? 0) + (penalty ?? 0),
+            }
+          })
+
+        await Promise.all(
+          groupedApplicationUids.map((groupApplicationUid) => {
+            const isPrimary = groupApplicationUid === primaryApplicationUid
+            const currentInputs = displayInputsByApplication[groupApplicationUid] ?? EMPTY_ASSESSMENT_INPUTS
+            const officialReceiptNumber =
+              groupApplicationUid === applicationUid
+                ? normalized.officialReceipt
+                : currentInputs.officialReceipt.trim()
+            const targetClient = clientByApplicationUid[groupApplicationUid]
+            const targetAssessmentBasis = enforceBusinessBasisByApplicationType(
+              targetClient?.applicationType,
+              normalizedForSaveWithTaxRule.assessmentBasis
+            )
+
+            return saveTreasuryFeeAssessment({
+              applicationUid: groupApplicationUid,
+              cedulaNumber: normalized.cedula,
+              officialReceiptNumber,
+              salaryAmount: "",
+              grossSalesAmount: targetAssessmentBasis.grossSales,
+              capitalAmount: targetAssessmentBasis.capital,
+              fees: isPrimary ? feesPayload : {},
+              additionalFees: isPrimary ? additionalFeesPayload : [],
+              lguTotal: isPrimary ? totals.lguTotal : 0,
+              grandTotal: isPrimary ? totals.grandTotal : 0,
+              assessmentStatus: resolvedAssessmentStatus,
+              allowMissingDocumentReferences,
+              staffUid: authUser.uid,
+              staffEmail: authUser.email ?? null,
+            })
+          })
+        )
+
+        setInputsByClient((previous) => {
+          const next = { ...previous }
+
+          groupedApplicationUids.forEach((groupApplicationUid) => {
+            const existing = previous[groupApplicationUid] ?? EMPTY_ASSESSMENT_INPUTS
+            const nextOfficialReceipt =
+              groupApplicationUid === applicationUid
+                ? normalizedForSave.officialReceipt
+                : existing.officialReceipt.trim()
+            const targetClient = clientByApplicationUid[groupApplicationUid]
+            const targetAssessmentBasis = enforceBusinessBasisByApplicationType(
+              targetClient?.applicationType,
+              normalizedForSaveWithTaxRule.assessmentBasis
+            )
+            const primarySnapshot = cloneAssessmentInputs({
+              ...normalizedForSaveWithTaxRule,
+              assessmentBasis: targetAssessmentBasis,
+            })
+            const nonPrimarySnapshot = cloneAssessmentInputs({
+              ...createEmptyAssessmentInputs(),
+              cedula: normalizedForSave.cedula,
+              officialReceipt: nextOfficialReceipt,
+              assessmentStatus: resolvedAssessmentStatus,
+              assessmentBasis: targetAssessmentBasis,
+            })
+            next[groupApplicationUid] =
+              groupApplicationUid === primaryApplicationUid
+                ? {
+                    ...primarySnapshot,
+                    cedula: normalizedForSave.cedula,
+                    officialReceipt: nextOfficialReceipt,
+                  }
+                : nonPrimarySnapshot
+          })
+
+          return next
+        })
+
+        if (closeAfterSave) {
+          resetDialogState()
+        } else {
+          setDialogInitialValues(cloneAssessmentInputs(normalizedForSaveWithTaxRule))
+          setEditorValues(cloneAssessmentInputs(normalizedForSaveWithTaxRule))
+          setIsDialogEditing(false)
+        }
+
+        if (successMessage) {
+          toast.success(successMessage)
+        }
+
+        return true
+      } catch (error) {
+        console.error("Failed to save treasury fee assessment", error)
+        const message = error instanceof Error ? error.message : "Save failed. Please try again."
+        setDialogFeedback({ type: "error", message })
+        toast.error(message)
+        return false
+      } finally {
+        setSavingClientUid(null)
+      }
+    },
+    [
+      applicantGroupsByApplication,
+      auth,
+      authUser,
+      clientByApplicationUid,
+      displayInputsByApplication,
+      resetDialogState,
+    ]
+  )
+
   const handleDialogOpenChange = (open: boolean) => {
-    if (open) return
-    if (selectedClient) {
-      const currentStatus = normalizeTreasuryAssessmentStatus(editorValues.assessmentStatus)
-      void persistAssessmentStatus(selectedClient, currentStatus)
+    if (open || dialogIsSaving) return
+    if (!selectedClient) {
+      resetDialogState()
+      return
     }
-    setSelectedClient(null)
-    setEditorValues(createEmptyAssessmentInputs())
-    setDialogInitialValues(createEmptyAssessmentInputs())
-    setIsDialogEditing(false)
-    setDialogFeedback(null)
+
+    const currentClient = selectedClient
+
+    if (isDialogEditing && dialogHasUnsavedChanges) {
+      void saveDialogAssessment({
+        record: currentClient,
+        values: {
+          ...editorValues,
+          assessmentStatus: "ongoing",
+        },
+        assessmentStatus: "ongoing",
+        allowMissingDocumentReferences: true,
+        successMessage: "Draft saved as ongoing.",
+        closeAfterSave: true,
+      })
+      return
+    }
+
+    if (dialogHasUnsavedChanges) {
+      void (async () => {
+        const currentStatus = normalizeTreasuryAssessmentStatus(editorValues.assessmentStatus)
+        const didPersist = await persistAssessmentStatus(currentClient, currentStatus)
+        if (didPersist) {
+          resetDialogState()
+        }
+      })()
+      return
+    }
+
+    resetDialogState()
   }
 
   const handleAssessmentStatusChange = (nextStatus: TreasuryAssessmentStatus) => {
@@ -1435,23 +1888,25 @@ export default function TreasuryClientsPage() {
     field: keyof AssessmentBasisInput,
     value: string
   ) => {
+    const formattedValue = formatAmountInputValue(value)
     setEditorValues((previous) => ({
       ...previous,
       assessmentBasis: {
         ...previous.assessmentBasis,
-        [field]: value,
+        [field]: formattedValue,
       },
     }))
   }
 
   const handleFeeValueChange = (feeKey: FeeKey, field: keyof FeeLineInput, value: string) => {
+    const formattedValue = formatAmountInputValue(value)
     setEditorValues((previous) => ({
       ...previous,
       fees: {
         ...previous.fees,
         [feeKey]: {
           ...previous.fees[feeKey],
-          [field]: value,
+          [field]: formattedValue,
         },
       },
     }))
@@ -1462,9 +1917,16 @@ export default function TreasuryClientsPage() {
     field: "name" | keyof FeeLineInput,
     value: string
   ) => {
+    const nextValue =
+      field === "name"
+        ? value
+        : formatAmountInputValue(value)
+
     setEditorValues((previous) => ({
       ...previous,
-      additionalFees: previous.additionalFees.map((fee) => (fee.id === id ? { ...fee, [field]: value } : fee)),
+      additionalFees: previous.additionalFees.map((fee) =>
+        fee.id === id ? { ...fee, [field]: nextValue } : fee
+      ),
     }))
   }
 
@@ -1556,158 +2018,14 @@ export default function TreasuryClientsPage() {
 
   const handleSaveFromDialog = async () => {
     if (!selectedClient) return
-
-    const normalized = normalizeAssessmentInputs(editorValues)
-    if (!hasRequiredDocumentReferences(normalized)) {
-      const message = "Cedula Number and Official Receipt Number are required before saving."
-      setDialogFeedback({ type: "error", message })
-      toast.error(message)
-      return
-    }
-
-    const applicationUid = getApplicationUid(selectedClient)
-    const selectedGroup = applicantGroupsByApplication[applicationUid]
-    const primaryApplicationUid = selectedGroup?.primaryApplicationUid ?? applicationUid
-    const groupedApplicationUids = Array.from(
-      new Set(selectedGroup?.applicationUids ?? [applicationUid])
-    )
-    setSavingClientUid(applicationUid)
-    setDialogFeedback(null)
-
-    try {
-      if (!authUser) throw new Error("Treasury session expired. Please sign in again.")
-      const liveUser = auth.currentUser
-      if (!liveUser) throw new Error("Treasury session expired. Please sign in again.")
-      if (liveUser.uid !== authUser.uid) {
-        throw new Error("Treasury session changed. Please sign in again.")
-      }
-
-      const resolvedAssessmentStatus: TreasuryAssessmentStatus = normalizeTreasuryAssessmentStatus(
-        normalized.assessmentStatus
-      )
-      const normalizedForSave: ClientAssessmentInputs = {
-        ...normalized,
-        assessmentStatus: resolvedAssessmentStatus,
-        assessmentBasis: enforceBusinessBasisByApplicationType(
-          selectedClient.applicationType,
-          normalized.assessmentBasis
-        ),
-      }
-      const primaryClient = clientByApplicationUid[primaryApplicationUid]
-      const normalizedForSaveWithTaxRule: ClientAssessmentInputs = {
-        ...normalizedForSave,
-        fees: enforceBusinessTaxByApplicationType(primaryClient?.applicationType, normalizedForSave.fees),
-      }
-
-      const totals = computeAssessmentTotals(
-        normalizedForSaveWithTaxRule.fees,
-        normalizedForSaveWithTaxRule.additionalFees
-      )
-      const feesPayload = FEE_DEFINITIONS.reduce((accumulator, item) => {
-        const row = normalizedForSaveWithTaxRule.fees[item.key]
-        const amount = parseOptionalNumber(row.amount)
-        const penalty = parseOptionalNumber(row.penalty)
-        accumulator[item.key] = {
-          amount,
-          penalty,
-          total: (amount ?? 0) + (penalty ?? 0),
-        } satisfies TreasuryFeeLine
-        return accumulator
-      }, {} as Record<string, TreasuryFeeLine>)
-      const additionalFeesPayload: TreasuryAdditionalFeeLine[] = normalizedForSaveWithTaxRule.additionalFees.map((row) => {
-        const amount = parseOptionalNumber(row.amount)
-        const penalty = parseOptionalNumber(row.penalty)
-
-        return {
-          name: row.name.trim() || "Additional Fee",
-          amount,
-          penalty,
-          total: (amount ?? 0) + (penalty ?? 0),
-        }
-      })
-
-      await Promise.all(
-        groupedApplicationUids.map((groupApplicationUid) => {
-          const isPrimary = groupApplicationUid === primaryApplicationUid
-          const currentInputs = displayInputsByApplication[groupApplicationUid] ?? EMPTY_ASSESSMENT_INPUTS
-          const officialReceiptNumber =
-            groupApplicationUid === applicationUid
-              ? normalized.officialReceipt
-              : currentInputs.officialReceipt.trim()
-          const targetClient = clientByApplicationUid[groupApplicationUid]
-          const targetAssessmentBasis = enforceBusinessBasisByApplicationType(
-            targetClient?.applicationType,
-            normalizedForSaveWithTaxRule.assessmentBasis
-          )
-          return saveTreasuryFeeAssessment({
-            applicationUid: groupApplicationUid,
-            cedulaNumber: normalized.cedula,
-            officialReceiptNumber,
-            salaryAmount: "",
-            grossSalesAmount: targetAssessmentBasis.grossSales,
-            capitalAmount: targetAssessmentBasis.capital,
-            fees: isPrimary ? feesPayload : {},
-            additionalFees: isPrimary ? additionalFeesPayload : [],
-            lguTotal: isPrimary ? totals.lguTotal : 0,
-            grandTotal: isPrimary ? totals.grandTotal : 0,
-            assessmentStatus: resolvedAssessmentStatus,
-            staffUid: authUser.uid,
-            staffEmail: authUser.email ?? null,
-          })
-        })
-      )
-
-      setInputsByClient((previous) => {
-        const next = { ...previous }
-
-        groupedApplicationUids.forEach((groupApplicationUid) => {
-          const existing = previous[groupApplicationUid] ?? EMPTY_ASSESSMENT_INPUTS
-          const nextOfficialReceipt =
-            groupApplicationUid === applicationUid
-              ? normalizedForSave.officialReceipt
-              : existing.officialReceipt.trim()
-          const targetClient = clientByApplicationUid[groupApplicationUid]
-          const targetAssessmentBasis = enforceBusinessBasisByApplicationType(
-            targetClient?.applicationType,
-            normalizedForSaveWithTaxRule.assessmentBasis
-          )
-          const primarySnapshot = cloneAssessmentInputs({
-            ...normalizedForSaveWithTaxRule,
-            assessmentBasis: targetAssessmentBasis,
-          })
-          const nonPrimarySnapshot = cloneAssessmentInputs({
-            ...createEmptyAssessmentInputs(),
-            cedula: normalizedForSave.cedula,
-            officialReceipt: nextOfficialReceipt,
-            assessmentStatus: resolvedAssessmentStatus,
-            assessmentBasis: targetAssessmentBasis,
-          })
-          next[groupApplicationUid] =
-            groupApplicationUid === primaryApplicationUid
-              ? {
-                  ...primarySnapshot,
-                  cedula: normalizedForSave.cedula,
-                  officialReceipt: nextOfficialReceipt,
-                }
-              : nonPrimarySnapshot
-        })
-
-        return next
-      })
-      setSelectedClient(null)
-      setEditorValues(createEmptyAssessmentInputs())
-      setDialogInitialValues(createEmptyAssessmentInputs())
-      setDialogFeedback(null)
-      toast.success("Saved")
-      setIsDialogEditing(false)
-    } catch (error) {
-      console.error("Failed to save treasury fee assessment", error)
-      const message = error instanceof Error ? error.message : "Save failed. Please try again."
-      setDialogFeedback({ type: "error", message })
-      toast.error(message)
-    } finally {
-      setSavingClientUid(null)
-    }
+    await saveDialogAssessment({
+      record: selectedClient,
+      values: editorValues,
+      assessmentStatus: normalizeTreasuryAssessmentStatus(editorValues.assessmentStatus),
+      allowMissingDocumentReferences: false,
+      successMessage: "Saved",
+      closeAfterSave: true,
+    })
   }
 
   return (
@@ -1926,6 +2244,53 @@ export default function TreasuryClientsPage() {
                         ? formatCurrency(selectedMobileFeeReference.estimatedTotal)
                         : "-"}
                     </p>
+
+                    {selectedMayorsPermitBreakdown ? (
+                      <div className="overflow-x-auto rounded-md border border-amber-200 bg-white">
+                        <table className="w-full min-w-[420px] border-collapse text-sm">
+                          <thead>
+                            <tr className="bg-amber-100 text-amber-900">
+                              <th className="border-b border-r border-amber-200 px-3 py-2 text-left font-semibold">
+                                Mayor&apos;s Permit Breakdown
+                              </th>
+                              <th className="border-b border-amber-200 px-3 py-2 text-right font-semibold whitespace-nowrap">
+                                Amount
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedMayorsPermitBreakdown.lines.length === 0 ? (
+                              <tr>
+                                <td colSpan={2} className="px-3 py-3 text-xs text-amber-800">
+                                  No Mayor&apos;s Permit breakdown details were provided.
+                                </td>
+                              </tr>
+                            ) : (
+                              selectedMayorsPermitBreakdown.lines.map((item) => (
+                                <tr key={`${item.label}-${item.amount}`} className="text-slate-800">
+                                  <td className="border-b border-r border-amber-100 px-3 py-2">
+                                    <div>{item.label}</div>
+                                    {item.note ? (
+                                      <div className="mt-1 text-[11px] text-amber-800">{item.note}</div>
+                                    ) : null}
+                                  </td>
+                                  <td className="border-b border-amber-100 px-3 py-2 text-right tabular-nums whitespace-nowrap">
+                                    {formatCurrency(item.amount)}
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : null}
+
+                    {selectedMayorsPermitBreakdown && selectedMayorsPermitBreakdown.total !== null ? (
+                      <p className="text-xs font-semibold text-amber-900 md:text-right">
+                        <span>Mayor&apos;s Permit Total:</span>{" "}
+                        {formatCurrency(selectedMayorsPermitBreakdown.total)}
+                      </p>
+                    ) : null}
                   </div>
                 ) : (
                   <p className="mt-3 text-sm text-amber-800">

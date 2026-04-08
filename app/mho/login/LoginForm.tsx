@@ -44,32 +44,43 @@ export default function LoginForm() {
   }
 
   useEffect(() => {
+    let cancelled = false
+
     const unsubscribe = onAuthStateChanged(
       auth,
       (user) => {
         if (user) {
           void (async () => {
             try {
-              const idToken = await user.getIdToken(true)
+              const idToken = await user.getIdToken()
               await verifyMhoAccess(idToken)
+              if (cancelled) return
               router.replace("/mho/home")
             } catch (err) {
+              if (cancelled) return
               await signOut(auth)
+              if (cancelled) return
               setError(err instanceof Error ? err.message : "MHO access is not authorized.")
             } finally {
+              if (cancelled) return
               setCheckingAuth(false)
             }
           })()
           return
         }
+        if (cancelled) return
         setCheckingAuth(false)
       },
       () => {
+        if (cancelled) return
         setError("Unable to verify authentication state. Please sign in.")
         setCheckingAuth(false)
       }
     )
-    return unsubscribe
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [auth, router])
 
   useEffect(() => {
@@ -92,9 +103,7 @@ export default function LoginForm() {
 
     setLoading(true)
     try {
-      const credential = await signInWithEmailAndPassword(auth, normalizedEmail, password)
-      const idToken = await credential.user.getIdToken(true)
-      await verifyMhoAccess(idToken)
+      await signInWithEmailAndPassword(auth, normalizedEmail, password)
 
       if (typeof window !== "undefined") {
         if (remember) {
@@ -104,8 +113,7 @@ export default function LoginForm() {
         }
       }
 
-      setSuccess("Signed in successfully.")
-      router.replace("/mho/home")
+      setSuccess("Signed in successfully. Verifying MHO access...")
       setPassword("")
     } catch (err) {
       if (auth.currentUser) {
