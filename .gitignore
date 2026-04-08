@@ -52,3 +52,4 @@ sa-inline.json
 /templates/*Mayor*Clearance*.xlsx
 /database/data/treasury-fees-backup-*.json
 /migration/
+/templates/
